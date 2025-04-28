@@ -1,0 +1,12 @@
+{
+  "domain": "wilma",
+  "name": "Wilma",
+  "codeowners": ["@frwickst"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/frwickst/wilma-ha",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "requirements": ["wilhelmina[playwright]"],
+  "version": "0.1.0"
+}
