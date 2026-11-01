@@ -368,6 +368,30 @@ entity: sensor.wilma_anna_lessons_this_week
 | `show_weekends` | only with lessons | `true` or `false` to always show or hide weekends |
 | `hour_height` | `56` | Height of one hour in pixels; larger shows more detail |
 | `start_hour`, `end_hour` | from the lessons | Fixed hours for the time axis, e.g. `8` and `16` |
+| `subject_colors` | no overrides | Map exact subject names to quoted `"#RRGGBB"` colours; overrides Wilma's colour for those subjects in both weeks (YAML editor) |
+
+If Wilma gives every lesson the same colour, or you prefer your own palette, set
+`subject_colors` in the card's YAML editor. Names must match the lesson's `subject` exactly,
+including any course suffix. Subjects you leave out keep Wilma's colour (or the card's
+automatic colour when Wilma supplies none). This changes only the card, not data in Wilma.
+
+```yaml
+type: custom:wilma-timetable-card
+entity: sensor.wilma_anna_lessons_this_week
+hour_height: 80
+show_teachers: true
+subject_colors:
+  "Svenska språket och litteraturen": "#A6CAF0"
+  "Matematik": "#F6C28B"
+  "Engelska (A2-lärokurs)": "#B5E3A8"
+  "Finska (A1-lärokurs)": "#F4A9B8"
+  "Musik": "#C9B6F0"
+  "Gymnastik": "#9EDDD8"
+  "Omgivningslära": "#F2E394"
+  "Bildkonst": "#D6C3A5"
+  "Religion/Livsåskådningskunskap": "#F6C28B"
+  "Slöjd": "#B5E3A8"
+```
 
 ### Next lesson
 

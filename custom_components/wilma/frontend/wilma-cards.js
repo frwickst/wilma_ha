@@ -946,7 +946,9 @@ const LESSON_PALETTE = [
   "#A6CAF0", "#F6C28B", "#B5E3A8", "#F4A9B8", "#C9B6F0", "#9EDDD8", "#F2E394", "#D6C3A5",
 ];
 
-function lessonColor(lesson) {
+function lessonColor(lesson, subjectColors = {}) {
+  const override = safeColor(subjectColors[lesson.subject]);
+  if (override) return override;
   const color = safeColor(lesson.color);
   if (color) return color;
   let hash = 0;
@@ -1142,6 +1144,15 @@ class WilmaTimetableCard extends WilmaCard {
   validateConfig(config) {
     if (config.week !== undefined && !WEEK_CHOICES.includes(config.week)) {
       throw new Error("week must be 'auto', 'current' or 'next'");
+    }
+    if (config.subject_colors !== undefined) {
+      const colors = config.subject_colors;
+      if (
+        !colors || typeof colors !== "object" || Array.isArray(colors) ||
+        Object.values(colors).some((color) => !safeColor(color))
+      ) {
+        throw new Error("subject_colors must be a mapping of subject names to #RRGGBB colours");
+      }
     }
     if (config.hour_height !== undefined) {
       const height = Number(config.hour_height);
@@ -1351,7 +1362,7 @@ class WilmaTimetableCard extends WilmaCard {
     const top = Math.max(0, position(item.start));
     const bottom = Math.min(gridHeight, position(item.end));
     const height = Math.max(16, bottom - top - 2);
-    const background = lessonColor(lesson);
+    const background = lessonColor(lesson, config.subject_colors);
     const foreground = textColorOn(background);
     const width = 100 / item.lanes;
     const time = `${formatTime(hass, lesson.start)}–${formatTime(hass, lesson.end)}`;

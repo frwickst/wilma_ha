@@ -135,6 +135,12 @@ const result = {
   finnish: render({ entity }, { now: WEDNESDAY, hass: makeHass({ language: "fi" }) }),
   fixed_hours: render({ entity, start_hour: 7, end_hour: 15, hour_height: 40 }, { now: WEDNESDAY }),
   teachers: render({ entity, show_teachers: true, hour_height: 100 }, { now: WEDNESDAY }),
+  subject_colors: render({ entity, subject_colors: { Matematik: "#F6C28B", Musik: "#202060" } }, { now: WEDNESDAY }),
+  next_subject_colors: render({ entity, week: "next", subject_colors: { Bildkonst: "#D6C3A5" } }, { now: WEDNESDAY }),
+  empty_subject_colors: render({ entity, subject_colors: {} }, { now: WEDNESDAY }),
+  bad_subject_colors: [null, [], "#F6C28B", { Matematik: "orange" }, { Matematik: "#abc" },
+    { Matematik: "#A6CAF0;background:red" }, { Matematik: 123 }].map(subject_colors =>
+      render({ entity, subject_colors }, { now: WEDNESDAY })),
   missing: render({ entity: "sensor.nope" }, { now: WEDNESDAY }),
   bad_week: render({ entity, week: "later" }, { now: WEDNESDAY }),
   bad_hours: render({ entity, start_hour: 15, end_hour: 8 }, { now: WEDNESDAY }),
@@ -226,6 +232,37 @@ def test_teachers_shown_when_configured(rendered: dict[str, Any]) -> None:
     gymnastik = next(block for block in blocks if "Gymnastik" in block)
     assert '<div class="line optional">Anna Teacher</div>' in gymnastik
     assert '<div class="line optional">419</div>' in gymnastik
+
+
+def test_subject_color_overrides(rendered: dict[str, Any]) -> None:
+    blocks = _blocks(rendered["subject_colors"]["html"])
+    matematik = [block for block in blocks if 'class="subject">Matematik<' in block]
+    assert len(matematik) == 3
+    # Overrides take precedence over Wilma's colour, including on past lessons.
+    assert all("--lesson-color:#F6C28B" in block for block in matematik)
+    # Text contrast is calculated from the override, not the original colour.
+    musik = musik_block(blocks)
+    assert "--lesson-color:#202060" in musik and ";color:#ffffff" in musik
+    # Subjects without an override keep Wilma's colour or the existing fallback.
+    original = _blocks(rendered["wednesday"]["html"])
+    assert [block for block in blocks if block not in matematik and block != musik] == [
+        block
+        for block in original
+        if 'class="subject">Matematik<' not in block
+        and 'class="subject">Musik<' not in block
+    ]
+    assert rendered["empty_subject_colors"] == rendered["wednesday"]
+
+
+def test_subject_colors_apply_to_next_week(rendered: dict[str, Any]) -> None:
+    blocks = _blocks(rendered["next_subject_colors"]["html"])
+    assert len(blocks) == 1
+    assert "Bildkonst" in blocks[0] and "--lesson-color:#D6C3A5" in blocks[0]
+
+
+def test_invalid_subject_colors(rendered: dict[str, Any]) -> None:
+    for result in rendered["bad_subject_colors"]:
+        assert "subject_colors must" in result["error"]
 
 
 def test_escapes_text(rendered: dict[str, Any]) -> None:
