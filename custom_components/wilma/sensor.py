@@ -39,6 +39,7 @@ from .const import (
     SENSOR_LATEST_EXAM_GRADE,
     SENSOR_LATEST_HOMEWORK,
     SENSOR_LATEST_MESSAGE,
+    SENSOR_LESSONS_NEXT_WEEK,
     SENSOR_LESSONS_THIS_WEEK,
     SENSOR_LESSONS_TODAY,
     SENSOR_LESSONS_TOMORROW,
@@ -101,8 +102,11 @@ async def async_setup_entry(
                 WilmaLessonsOnDaySensor(
                     coordinator, entry, student, SENSOR_LESSONS_TOMORROW, days_ahead=1
                 ),
-                WilmaLessonsThisWeekSensor(
-                    coordinator, entry, student, SENSOR_LESSONS_THIS_WEEK
+                WilmaLessonsWeekSensor(
+                    coordinator, entry, student, SENSOR_LESSONS_THIS_WEEK, weeks_ahead=0
+                ),
+                WilmaLessonsWeekSensor(
+                    coordinator, entry, student, SENSOR_LESSONS_NEXT_WEEK, weeks_ahead=1
                 ),
                 WilmaNextExamSensor(coordinator, entry, student, SENSOR_NEXT_EXAM),
                 WilmaUpcomingExamsSensor(
@@ -440,14 +444,27 @@ class WilmaLessonsOnDaySensor(WilmaScheduleSensor):
         return {"date": day.isoformat(), **self._summary(lessons)}
 
 
-class WilmaLessonsThisWeekSensor(WilmaScheduleSensor):
-    """Number of lessons this week, with the lessons as attributes."""
+class WilmaLessonsWeekSensor(WilmaScheduleSensor):
+    """Number of lessons in a week relative to this one, with the lessons as attributes."""
 
     _attr_icon = "mdi:calendar-week"
     _attr_native_unit_of_measurement = "lessons"
 
+    def __init__(
+        self,
+        coordinator: WilmaCoordinator,
+        entry: WilmaConfigEntry,
+        student: StudentData,
+        key: str,
+        weeks_ahead: int,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, student, key)
+        self._weeks_ahead = weeks_ahead
+
     def _week(self, student: StudentData) -> WeekSchedule | None:
-        return student.schedule.get(week_start(self._today()))
+        monday = week_start(self._today()) + timedelta(weeks=self._weeks_ahead)
+        return student.schedule.get(monday)
 
     def _value(self, student: StudentData) -> int | None:
         week = self._week(student)

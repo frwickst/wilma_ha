@@ -77,7 +77,7 @@ Anna.
 | New bulletins | Sensor | Bulletins that appeared within the recent threshold |
 | Next lesson | Sensor | Subject of the next lesson that hasn't started; date, start, end, teachers, rooms |
 | Lessons today / tomorrow | Sensor | Number of lessons (`0` on days off); date, start (first lesson), end (last lesson), lessons |
-| Lessons this week | Sensor | Number of lessons; week_start, week_end, lessons |
+| Lessons this week / next week | Sensor | Number of lessons; week_start, week_end, lessons (with each course's colour) |
 | Next exam | Sensor | Subject of the next exam (today or later); id, date, subject, course, name, info, teachers, grade, verbal_grade, days_until |
 | Upcoming exams | Sensor | Number of exams today or later; `exams` (soonest first, at most 15: date, subject, course, name, info, teachers, and grade when there is one) |
 | Latest exam grade | Sensor | Grade (or verbal assessment) of the most recent graded exam; id, date, subject, course, name, info, teachers, grade, verbal_grade, seen, `graded_exams` (the 10 newest: date, subject, course, grade, verbal_grade) |
@@ -344,6 +344,31 @@ hide_past_days: true
 | `show_rooms`, `show_teachers` | `true` | Show rooms and teachers |
 | `hide_past_days` | `false` | In week mode, leave out the days before today |
 
+### Weekly timetable
+
+The week as a timetable, like the schedule view in Wilma: a column per weekday, a time axis,
+and each lesson as a block in its course colour, sized by its length. Today's column, the
+ongoing lesson and a line at the current time are highlighted, and past lessons fade. Lessons
+that overlap sit side by side. Buttons switch between this week and next week, and by default
+the card moves on to next week by itself once this week's last lesson has ended, so on a
+weekend it already shows the coming week. Weekends appear only when they have lessons. On a
+phone, details that don't fit are left out, and screen readers get every lesson in full.
+
+```yaml
+type: custom:wilma-timetable-card
+entity: sensor.wilma_anna_lessons_this_week
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `entity` | | The lessons this week (or next week) sensor; the other week is found automatically |
+| `week` | `auto` | `auto` (this week until it is over, then next week), `current` or `next` |
+| `show_rooms` | `true` | Show rooms in the lesson blocks |
+| `show_teachers` | `false` | Show teachers in the lesson blocks (when there is room) |
+| `show_weekends` | only with lessons | `true` or `false` to always show or hide weekends |
+| `hour_height` | `56` | Height of one hour in pixels; larger shows more detail |
+| `start_hour`, `end_hour` | from the lessons | Fixed hours for the time axis, e.g. `8` and `16` |
+
 ### Next lesson
 
 A compact tile: subject, time until it starts (or the day and time), room and teacher.
@@ -422,7 +447,8 @@ What you get:
   they sit side by side in up to four columns; on a phone they stack in this order:
   - **Today**: the next lesson as a compact tile (subject, how soon, room and teacher),
     followed by today's and tomorrow's lessons with the ongoing lesson highlighted.
-  - **This week**: the week's lessons grouped by weekday.
+  - **This week**: the weekly timetable, two columns wide, which moves on to next week
+    once this week is over.
   - **Recent activity**: messages, attendance marks and bulletins in one list, newest
     first, each with who sent or entered it; below it, tiles with the number of unread
     messages and new bulletins.

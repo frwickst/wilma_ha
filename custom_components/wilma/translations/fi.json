@@ -67,6 +67,9 @@
       "lessons_this_week": {
         "name": "Tunnit tällä viikolla"
       },
+      "lessons_next_week": {
+        "name": "Tunnit ensi viikolla"
+      },
       "next_exam": {
         "name": "Seuraava koe"
       },

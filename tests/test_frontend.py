@@ -328,6 +328,7 @@ async def test_cards_render(tmp_path: Path) -> None:
 
     assert result["cards"] == [
         "wilma-schedule-card",
+        "wilma-timetable-card",
         "wilma-next-lesson-card",
         "wilma-activity-card",
         "wilma-marks-card",

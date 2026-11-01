@@ -29,6 +29,7 @@ STUDENT_ENTITIES = {
         "lessons_today",
         "lessons_tomorrow",
         "lessons_this_week",
+        "lessons_next_week",
         "next_exam",
         "upcoming_exams",
         "latest_exam_grade",

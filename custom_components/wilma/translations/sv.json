@@ -67,6 +67,9 @@
       "lessons_this_week": {
         "name": "Lektioner denna vecka"
       },
+      "lessons_next_week": {
+        "name": "Lektioner nästa vecka"
+      },
       "next_exam": {
         "name": "Nästa prov"
       },

@@ -64,13 +64,15 @@ views:
             entity: sensor.wilma_anna_lessons_tomorrow
             mode: day
             title: Schedule
-      # This week's schedule
+      # The week as a timetable grid; it switches to next week once this week is over
       - type: grid
+        column_span: 2
         cards:
-          - type: custom:wilma-schedule-card
+          - type: custom:wilma-timetable-card
             entity: sensor.wilma_anna_lessons_this_week
-            mode: week
-            title: This week
+            week: auto
+            grid_options:
+              columns: 12
       # Recent activity: messages, attendance marks and bulletins, with who sent them
       - type: grid
         cards:

@@ -67,6 +67,9 @@
       "lessons_this_week": {
         "name": "Lessons this week"
       },
+      "lessons_next_week": {
+        "name": "Lessons next week"
+      },
       "next_exam": {
         "name": "Next exam"
       },

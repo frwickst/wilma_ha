@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -135,15 +136,22 @@ def homework_attributes(
     }
 
 
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
 def lesson_attributes(lesson: Lesson, tz: ZoneInfo) -> dict[str, Any]:
     """Flat, JSON-serialisable description of a lesson."""
-    return {
+    attrs: dict[str, Any] = {
         "start": lesson.starts_at.replace(tzinfo=tz).isoformat(),
         "end": lesson.ends_at.replace(tzinfo=tz).isoformat(),
         "subject": lesson.subject,
         "teachers": lesson.teachers,
         "rooms": lesson.rooms,
     }
+    # The course colour Wilma shows the lesson in, when it has a valid one
+    if lesson.color and _HEX_COLOR_RE.match(lesson.color):
+        attrs["color"] = lesson.color.upper()
+    return attrs
 
 
 @dataclass

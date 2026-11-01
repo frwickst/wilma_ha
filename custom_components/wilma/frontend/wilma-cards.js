@@ -22,6 +22,7 @@ const STUDENT_KEYS = new Set([
   "lessons_today",
   "lessons_tomorrow",
   "lessons_this_week",
+  "lessons_next_week",
   "upcoming_exams",
   "next_exam",
   "latest_exam_grade",
@@ -34,6 +35,15 @@ const STUDENT_KEYS = new Set([
 const STRINGS = {
   en: {
     schedule: "Schedule",
+    timetable: "Weekly timetable",
+    next_week: "Next week",
+    week_label: "Week {number}",
+    week: "Week",
+    week_auto: "Automatic (next week once this one is over)",
+    week_current: "This week",
+    week_next: "Next week",
+    show_weekends: "Show weekends",
+    hour_height: "Hour height (pixels)",
     today: "Today",
     tomorrow: "Tomorrow",
     yesterday: "Yesterday",
@@ -100,6 +110,15 @@ const STRINGS = {
   },
   fi: {
     schedule: "Lukujärjestys",
+    timetable: "Viikon lukujärjestys",
+    next_week: "Ensi viikko",
+    week_label: "Viikko {number}",
+    week: "Viikko",
+    week_auto: "Automaattinen (ensi viikko, kun tämä on ohi)",
+    week_current: "Tämä viikko",
+    week_next: "Ensi viikko",
+    show_weekends: "Näytä viikonloput",
+    hour_height: "Tunnin korkeus (pikseliä)",
     today: "Tänään",
     tomorrow: "Huomenna",
     yesterday: "Eilen",
@@ -149,6 +168,15 @@ const STRINGS = {
   },
   sv: {
     schedule: "Schema",
+    timetable: "Veckoschema",
+    next_week: "Nästa vecka",
+    week_label: "Vecka {number}",
+    week: "Vecka",
+    week_auto: "Automatiskt (nästa vecka när denna är slut)",
+    week_current: "Denna vecka",
+    week_next: "Nästa vecka",
+    show_weekends: "Visa veckoslut",
+    hour_height: "Timhöjd (pixlar)",
     today: "I dag",
     tomorrow: "I morgon",
     yesterday: "I går",
@@ -874,6 +902,504 @@ class WilmaScheduleCard extends WilmaCard {
 }
 
 /* ---------- Next lesson ---------- */
+
+/* ---------- Weekly timetable ---------- */
+
+/* Minutes since midnight of a school-local ISO datetime such as "2026-11-03T08:15:00+02:00". */
+function wallMinutes(iso) {
+  const match = /T(\d{2}):(\d{2})/.exec(typeof iso === "string" ? iso : "");
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/* The UTC offset of an ISO datetime in minutes, e.g. 120 for "+02:00". */
+function offsetMinutes(iso) {
+  const match = /([+-])(\d{2}):(\d{2})$/.exec(typeof iso === "string" ? iso : "");
+  if (!match) return null;
+  return (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3]));
+}
+
+/* The school-local date and minutes of `now`, using the UTC offset the lessons are given in. */
+function schoolNow(now, offset) {
+  const shifted = new Date(now.getTime() + offset * 60000);
+  return {
+    date: shifted.toISOString().slice(0, 10),
+    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes(),
+  };
+}
+
+/* ISO 8601 week number of a "YYYY-MM-DD" date. */
+function isoWeek(iso) {
+  const date = dateOnly(iso);
+  if (!date) return null;
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7) + 3);
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  return (
+    1 +
+    Math.round(
+      ((date - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7
+    )
+  );
+}
+
+/* Colours for lessons without one, picked by subject so a subject keeps its colour. */
+const LESSON_PALETTE = [
+  "#A6CAF0", "#F6C28B", "#B5E3A8", "#F4A9B8", "#C9B6F0", "#9EDDD8", "#F2E394", "#D6C3A5",
+];
+
+function lessonColor(lesson) {
+  const color = safeColor(lesson.color);
+  if (color) return color;
+  let hash = 0;
+  for (const char of String(lesson.subject ?? "")) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
+  return LESSON_PALETTE[hash % LESSON_PALETTE.length];
+}
+
+/* Dark or light text, whichever reads better on the background colour. */
+function textColorOn(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const linear = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  return luminance > 0.36 ? "#1c1c1c" : "#ffffff";
+}
+
+/*
+ * Places a day's lessons in side-by-side lanes where they overlap. Returns the lessons with
+ * their start and end minutes, lane index and number of lanes in their group of overlaps.
+ */
+function layoutDay(lessons) {
+  const items = lessons
+    .map((lesson) => ({ lesson, start: wallMinutes(lesson.start), end: wallMinutes(lesson.end) }))
+    .filter((item) => item.start !== null && item.end !== null && item.end > item.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  let group = [];
+  let groupEnd = -1;
+  let laneEnds = [];
+  const finish = () => {
+    for (const item of group) item.lanes = laneEnds.length;
+  };
+  for (const item of items) {
+    if (item.start >= groupEnd) {
+      finish();
+      group = [];
+      laneEnds = [];
+    }
+    let lane = laneEnds.findIndex((end) => end <= item.start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(item.end);
+    } else {
+      laneEnds[lane] = item.end;
+    }
+    item.lane = lane;
+    group.push(item);
+    groupEnd = Math.max(groupEnd, item.end);
+  }
+  finish();
+  return items;
+}
+
+const WEEK_CHOICES = ["auto", "current", "next"];
+
+/* Line heights and padding of a lesson block, for fitting its text to its height. */
+const SUBJECT_LINE_PX = 17;
+const DETAIL_LINE_PX = 15;
+const BLOCK_PADDING_PX = 6;
+
+/*
+ * The text that fits a lesson block of the given height without cutting a line in half:
+ * in order of importance the subject's first line, the time, the subject's second line,
+ * the room and the teacher.
+ */
+function fitBlock(height, { rooms, teachers }) {
+  let left = height - BLOCK_PADDING_PX - SUBJECT_LINE_PX;
+  const take = (px) => {
+    if (left < px) return false;
+    left -= px;
+    return true;
+  };
+  const time = take(DETAIL_LINE_PX);
+  const twoLines = time && take(SUBJECT_LINE_PX);
+  const room = Boolean(rooms) && time && take(DETAIL_LINE_PX);
+  const teacher = Boolean(teachers) && time && take(DETAIL_LINE_PX);
+  return { time, twoLines, room, teacher };
+}
+
+class WilmaTimetableCard extends WilmaCard {
+  static styles = `
+    .content { container-type: inline-size; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px 0; }
+    .toggle { display: inline-flex; border: 1px solid var(--divider-color); border-radius: 16px; overflow: hidden; }
+    .toggle button {
+      font: inherit; font-size: 0.875rem; padding: 4px 12px; border: 0; cursor: pointer;
+      background: transparent; color: var(--primary-text-color);
+    }
+    .toggle button + button { border-inline-start: 1px solid var(--divider-color); }
+    .toggle button[aria-pressed="true"] {
+      background: var(--primary-color); color: var(--text-primary-color, #fff);
+    }
+    .toggle button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+    .grid {
+      display: grid; grid-template-columns: 2.75rem repeat(var(--days), minmax(0, 1fr));
+      column-gap: 2px; margin-top: 4px;
+    }
+    .head {
+      display: flex; flex-direction: column; align-items: center; padding: 4px 0 6px;
+      font-size: 0.8125rem; line-height: 1.25; text-align: center; min-width: 0;
+    }
+    .head .weekday { font-weight: 500; }
+    .head .date { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+    .head.today { color: var(--primary-color); }
+    .head.today .weekday { font-weight: 700; }
+    .head.today .date { color: var(--primary-color); }
+    .axis { position: relative; height: var(--grid-height); }
+    .axis span {
+      position: absolute; inset-inline-end: 6px; transform: translateY(-50%);
+      font-size: 0.75rem; color: var(--secondary-text-color); font-variant-numeric: tabular-nums;
+    }
+    .axis span:first-child { transform: none; }
+    .day {
+      position: relative; height: var(--grid-height); border-radius: 6px;
+      background-image: repeating-linear-gradient(to bottom, var(--divider-color) 0 1px, transparent 1px var(--hour-height));
+    }
+    .day.today { background-color: rgba(var(--rgb-primary-color, 3, 169, 244), 0.07); }
+    .day ol { list-style: none; margin: 0; padding: 0; }
+    .block {
+      position: absolute; box-sizing: border-box; padding: 3px 5px; overflow: hidden;
+      border-radius: 6px; font-size: 0.75rem; line-height: 1.25;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    }
+    .block .subject {
+      font-weight: 600; font-size: 0.8125rem; line-height: ${SUBJECT_LINE_PX}px; overflow: hidden;
+      text-overflow: ellipsis; display: -webkit-box; -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1; hyphens: auto; overflow-wrap: anywhere;
+    }
+    .block.two-lines .subject { -webkit-line-clamp: 2; }
+    .block .line {
+      line-height: ${DETAIL_LINE_PX}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      opacity: 0.85;
+    }
+    .block { background: var(--lesson-color); }
+    /* Past lessons fade into the card, with the theme's text colour so they stay readable */
+    .block.past {
+      background: color-mix(in srgb, var(--lesson-color) 35%, var(--card-background-color, #fff));
+      color: var(--secondary-text-color); box-shadow: inset 0 0 0 1px var(--divider-color);
+    }
+    .block.now { box-shadow: 0 0 0 2px var(--primary-color); z-index: 1; }
+    .now-line {
+      position: absolute; inset-inline: -2px; height: 2px; background: var(--error-color, #db4437);
+      z-index: 2; pointer-events: none;
+    }
+    .now-line::before {
+      content: ""; position: absolute; inset-inline-start: -4px; top: -3px; width: 8px; height: 8px;
+      border-radius: 50%; background: var(--error-color, #db4437);
+    }
+    @container (max-width: 420px) {
+      .grid { grid-template-columns: 2.25rem repeat(var(--days), minmax(0, 1fr)); }
+      .head .date, .block .line.optional { display: none; }
+      .block { padding: 2px 3px; }
+      .block .subject { font-size: 0.75rem; }
+    }
+  `;
+
+  constructor() {
+    super();
+    this._choice = undefined;
+    this.shadowRoot.addEventListener?.("click", (event) => {
+      const button = event.target?.closest?.("button[data-week]");
+      if (!button) return;
+      this._choice = button.dataset.week;
+      this._update();
+    });
+  }
+
+  static getStubConfig(hass) {
+    const found = firstStudentEntities(hass, ["lessons_this_week"]);
+    return { entity: found.lessons_this_week || "", week: "auto" };
+  }
+
+  static getConfigForm() {
+    return {
+      schema: [
+        { name: "entity", selector: { entity: { filter: { integration: DOMAIN, domain: "sensor" } } } },
+        {
+          name: "week",
+          selector: {
+            select: {
+              mode: "dropdown",
+              options: WEEK_CHOICES.map((value) => ({ value, label: t(undefined, `week_${value}`) })),
+            },
+          },
+        },
+        { name: "title", selector: { text: {} } },
+        { name: "show_rooms", selector: { boolean: {} } },
+        { name: "show_teachers", selector: { boolean: {} } },
+        { name: "hour_height", selector: { number: { min: 32, max: 120, step: 4, mode: "box" } } },
+      ],
+      computeLabel: (item) => t(undefined, item.name),
+    };
+  }
+
+  validateConfig(config) {
+    if (config.week !== undefined && !WEEK_CHOICES.includes(config.week)) {
+      throw new Error("week must be 'auto', 'current' or 'next'");
+    }
+    if (config.hour_height !== undefined) {
+      const height = Number(config.hour_height);
+      if (!Number.isFinite(height) || height < 24 || height > 200) {
+        throw new Error("hour_height must be a number between 24 and 200");
+      }
+    }
+    for (const option of ["start_hour", "end_hour"]) {
+      const hour = config[option];
+      if (hour !== undefined && !(Number.isInteger(hour) && hour >= 0 && hour <= 24)) {
+        throw new Error(`${option} must be a whole hour from 0 to 24`);
+      }
+    }
+    if (
+      config.start_hour !== undefined &&
+      config.end_hour !== undefined &&
+      config.start_hour >= config.end_hour
+    ) {
+      throw new Error("start_hour must be before end_hour");
+    }
+  }
+
+  /* This week's and next week's sensors of the configured student. */
+  weekEntities() {
+    const hass = this._hass;
+    const config = this._config;
+    if (config.entity) {
+      const key = hass?.entities?.[config.entity]?.translation_key;
+      if (key === "lessons_next_week") {
+        return {
+          current: siblingEntity(hass, config.entity, "lessons_this_week"),
+          next: config.entity,
+        };
+      }
+      return { current: config.entity, next: siblingEntity(hass, config.entity, "lessons_next_week") };
+    }
+    return {
+      current: findEntity(hass, config.student, "lessons_this_week"),
+      next: findEntity(hass, config.student, "lessons_next_week"),
+    };
+  }
+
+  entityIds() {
+    const { current, next } = this.weekEntities();
+    return [current, next].filter(Boolean);
+  }
+
+  /* Which week to show: the one picked with the buttons, else the configured one. */
+  _shownWeek(current, next, now) {
+    if (this._choice === "next" && next) return "next";
+    if (this._choice === "current" && current) return "current";
+    const configured = this._config.week || "auto";
+    if (configured === "next") return next ? "next" : "current";
+    if (configured === "current" || !next) return "current";
+    if (!current) return "next";
+    // Automatic: this week until its last lesson ends, then next week
+    const lessons = asList(attributes(this._hass, current)?.lessons);
+    const remaining = lessons.some((lesson) => {
+      const end = parseDateTime(lesson?.end);
+      return end && end > now;
+    });
+    return remaining ? "current" : "next";
+  }
+
+  renderCard(now) {
+    const hass = this._hass;
+    const config = this._config;
+    const { current, next } = this.weekEntities();
+    const shown = this._shownWeek(current, next, now);
+    const entityId = shown === "next" ? next : current || next;
+    const title = present(config.title)
+      ? config.title
+      : titleWithStudent(hass, t(hass, "timetable"), entityId);
+    const toolbar = current && next ? this._toolbar(shown) : "";
+    const problem = entityProblem(hass, entityId);
+    if (problem) return card(toolbar + warning(problem), title);
+
+    const attrs = attributes(hass, entityId);
+    const lessons = sortLessons(attrs.lessons);
+    const subtitle = this._subtitle(attrs, lessons);
+    if (!lessons.length) {
+      return `<ha-card>${header(title, subtitle)}${toolbar}<div class="content">${empty(
+        t(hass, "no_lessons")
+      )}</div></ha-card>`;
+    }
+    return `<ha-card>${header(title, subtitle)}${toolbar}<div class="content">${this._grid(
+      attrs,
+      lessons,
+      now
+    )}</div></ha-card>`;
+  }
+
+  _toolbar(shown) {
+    const hass = this._hass;
+    const button = (value, label) =>
+      `<button type="button" data-week="${value}" aria-pressed="${shown === value}">${esc(label)}</button>`;
+    return `<div class="toolbar"><div class="toggle" role="group" aria-label="${esc(
+      t(hass, "week")
+    )}">${button("current", t(hass, "this_week"))}${button("next", t(hass, "next_week"))}</div></div>`;
+  }
+
+  /* The week number and the range of the days shown, e.g. "Week 45 · 2 Nov – 6 Nov". */
+  _subtitle(attrs, lessons) {
+    const hass = this._hass;
+    const lessonDays = new Map(lessons.map((lesson) => [lessonDate(lesson), true]));
+    lessonDays.delete(null);
+    const days = this._days(attrs, lessonDays);
+    const first = days[0];
+    if (!first) return "";
+    const last = days[days.length - 1];
+    const week = isoWeek(first);
+    const range = `${formatDate(hass, first, { day: "numeric", month: "short" })} – ${formatDate(
+      hass,
+      last || first,
+      { day: "numeric", month: "short" }
+    )}`;
+    return week ? `${t(hass, "week_label", { number: week })} · ${range}` : range;
+  }
+
+  /* The dates to show: Monday to Friday, and weekend days when they have lessons. */
+  _days(attrs, byDay) {
+    const dates = [...byDay.keys()].sort();
+    const first = dateOnly(attrs.week_start) ? attrs.week_start : dates[0];
+    const last = dateOnly(attrs.week_end) ? attrs.week_end : dates[dates.length - 1];
+    const weekends = this._config.show_weekends;
+    const days = [];
+    for (let day = first, n = 0; day && day <= last && n < 14; day = addDays(day, 1), n++) {
+      const weekday = dateOnly(day).getUTCDay();
+      const weekend = weekday === 0 || weekday === 6;
+      if (!weekend || weekends === true || (weekends !== false && byDay.has(day))) days.push(day);
+    }
+    return days;
+  }
+
+  _grid(attrs, lessons, now) {
+    const hass = this._hass;
+    const config = this._config;
+    const byDay = new Map();
+    for (const lesson of lessons) {
+      const day = lessonDate(lesson);
+      if (!day) continue;
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day).push(lesson);
+    }
+    const days = this._days(attrs, byDay);
+    const laidOut = new Map(days.map((day) => [day, layoutDay(byDay.get(day) || [])]));
+
+    // Whole hours around the lessons, unless configured
+    const starts = [...laidOut.values()].flat().map((item) => item.start);
+    const ends = [...laidOut.values()].flat().map((item) => item.end);
+    const firstHour = config.start_hour ?? (starts.length ? Math.floor(Math.min(...starts) / 60) : 8);
+    const lastHour = config.end_hour ?? (ends.length ? Math.ceil(Math.max(...ends) / 60) : 16);
+    const fromMinutes = firstHour * 60;
+    const hours = Math.max(1, lastHour - firstHour);
+    const hourHeight = Number(config.hour_height ?? 56);
+    const gridHeight = hours * hourHeight;
+    const position = (minutes) => ((minutes - fromMinutes) / 60) * hourHeight;
+
+    const offset = offsetMinutes(lessons[0].start) ?? 0;
+    const school = schoolNow(now, offset);
+
+    const heads = days
+      .map((day) => {
+        const isToday = day === school.date;
+        return `<div class="head${isToday ? " today" : ""}"${isToday ? ' aria-current="date"' : ""}>
+          <span class="weekday">${esc(formatDate(hass, day, { weekday: "short" }))}</span>
+          <span class="date">${esc(formatDate(hass, day, { day: "numeric", month: "numeric" }))}</span>
+        </div>`;
+      })
+      .join("");
+    const axis = Array.from({ length: hours }, (_, i) => {
+      const hour = firstHour + i;
+      return `<span style="top:${i * hourHeight}px">${esc(formatWallTime(hass, hour, 0))}</span>`;
+    }).join("");
+
+    const columns = days
+      .map((day) => {
+        const isToday = day === school.date;
+        const items = laidOut.get(day) || [];
+        const blocks = items
+          .map((item) => this._block(item, position, now, fromMinutes, gridHeight))
+          .join("");
+        let nowLine = "";
+        const minutes = school.minutes;
+        if (isToday && minutes >= fromMinutes && minutes <= fromMinutes + hours * 60) {
+          nowLine = `<div class="now-line" style="top:${position(minutes)}px" aria-hidden="true"></div>`;
+        }
+        const label = formatDate(hass, day, { weekday: "long", day: "numeric", month: "long" });
+        return `<section class="day${isToday ? " today" : ""}" aria-label="${esc(label)}">
+          ${items.length ? `<ol>${blocks}</ol>` : srOnly(t(hass, "no_lessons"))}${nowLine}
+        </section>`;
+      })
+      .join("");
+
+    // The language lets the browser hyphenate long subject names in narrow columns
+    return `<div class="grid" lang="${esc(language(hass))}" style="--days:${days.length};--hour-height:${hourHeight}px;--grid-height:${gridHeight}px">
+      <div aria-hidden="true"></div>${heads}
+      <div class="axis" aria-hidden="true">${axis}</div>${columns}
+    </div>`;
+  }
+
+  _block(item, position, now, fromMinutes, gridHeight) {
+    const hass = this._hass;
+    const config = this._config;
+    const { lesson } = item;
+    const status = lessonStatus(lesson, now);
+    const top = Math.max(0, position(item.start));
+    const bottom = Math.min(gridHeight, position(item.end));
+    const height = Math.max(16, bottom - top - 2);
+    const background = lessonColor(lesson);
+    const foreground = textColorOn(background);
+    const width = 100 / item.lanes;
+    const time = `${formatTime(hass, lesson.start)}–${formatTime(hass, lesson.end)}`;
+    const rooms = config.show_rooms !== false ? textList(lesson.rooms).join(", ") : "";
+    const teachers = textList(lesson.teachers).join(", ");
+    const fit = fitBlock(height, { rooms, teachers: config.show_teachers === true ? teachers : "" });
+    const lines = [];
+    if (fit.time) lines.push({ text: time, optional: false });
+    if (fit.room) lines.push({ text: rooms, optional: true });
+    if (fit.teacher) lines.push({ text: teachers, optional: true });
+    // What doesn't fit is still read out by screen readers
+    const hidden = [fit.time ? "" : time, fit.room ? "" : rooms, fit.teacher ? "" : teachers].filter(
+      Boolean
+    );
+    const style = [
+      `top:${top}px`,
+      `height:${height}px`,
+      `inset-inline-start:calc(${item.lane * width}% + 1px)`,
+      `width:calc(${width}% - 2px)`,
+      `--lesson-color:${background}`,
+      ...(status === "past" ? [] : [`color:${foreground}`]),
+    ].join(";");
+    return `<li class="block ${status}${fit.twoLines ? " two-lines" : ""}" style="${style}"${
+      status === "now" ? ' aria-current="time"' : ""
+    }>
+      <div class="subject">${esc(present(lesson.subject) ? lesson.subject : "—")}</div>
+      ${lines.map((line) => `<div class="line${line.optional ? " optional" : ""}">${esc(line.text)}</div>`).join("")}
+      ${hidden.length ? srOnly(`, ${hidden.join(", ")}`) : ""}${
+        status === "now" ? srOnly(` (${t(hass, "now")})`) : status === "past" ? srOnly(` (${t(hass, "ended")})`) : ""
+      }
+    </li>`;
+  }
+
+  cardSize() {
+    const { current } = this.weekEntities();
+    const lessons = asList(attributes(this._hass, current)?.lessons);
+    const starts = lessons.map((l) => wallMinutes(l?.start)).filter((m) => m !== null);
+    const ends = lessons.map((l) => wallMinutes(l?.end)).filter((m) => m !== null);
+    if (!starts.length) return 3;
+    const hours = Math.ceil(Math.max(...ends) / 60) - Math.floor(Math.min(...starts) / 60);
+    const pixels = hours * Number(this._config.hour_height ?? 56);
+    return 2 + Math.ceil(pixels / 50);
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6 };
+  }
+}
 
 class WilmaNextLessonCard extends WilmaCard {
   static styles = `
@@ -1630,11 +2156,13 @@ function countBadge(entityId, name) {
 }
 
 /* Sections without cards are left out, so hidden parts and missing entities leave no gaps. */
+/* Grid sections from lists of cards, or from {cards, column_span} for wider sections. */
 function sections(groups) {
   return groups
-    .map((cards) => compact(cards))
-    .filter((cards) => cards.length)
-    .map((cards) => ({ type: "grid", cards }));
+    .map((group) => (Array.isArray(group) ? { cards: group } : group))
+    .map((group) => ({ ...group, cards: compact(group.cards) }))
+    .filter((group) => group.cards.length)
+    .map(({ cards, column_span: span }) => ({ type: "grid", ...(span ? { column_span: span } : {}), cards }));
 }
 
 function studentView(hass, student, hide, accounts) {
@@ -1661,17 +2189,21 @@ function studentView(hass, student, hide, accounts) {
       show("today", dayScheduleCard(hass, e.lessons_today)),
       show("today", dayScheduleCard(hass, e.lessons_tomorrow)),
     ],
-    [
-      show(
-        "week",
-        e.lessons_this_week && {
-          type: "custom:wilma-schedule-card",
-          entity: e.lessons_this_week,
-          mode: "week",
-          title: t(hass, "this_week"),
-        }
-      ),
-    ],
+    {
+      // The timetable needs the width of two columns to fit a school week
+      column_span: 2,
+      cards: [
+        show(
+          "week",
+          e.lessons_this_week && {
+            type: "custom:wilma-timetable-card",
+            entity: e.lessons_this_week,
+            week: "auto",
+            grid_options: FULL_WIDTH,
+          }
+        ),
+      ],
+    },
     [
       show("activity", activityCard(hass, e, 10)),
       show("activity", tile(e.unread_count, t(hass, "unread_messages"))),
@@ -1837,6 +2369,12 @@ const CARDS = [
     description: "A student's lessons for a day or the week, with the ongoing lesson highlighted.",
   },
   {
+    type: "wilma-timetable-card",
+    element: WilmaTimetableCard,
+    name: "Wilma weekly timetable",
+    description: "A student's week as a timetable grid, with this week and next week.",
+  },
+  {
     type: "wilma-next-lesson-card",
     element: WilmaNextLessonCard,
     name: "Wilma next lesson",
@@ -1898,5 +2436,6 @@ export {
   WilmaMarksCard,
   WilmaNextLessonCard,
   WilmaScheduleCard,
+  WilmaTimetableCard,
   WilmaViewStrategy,
 };

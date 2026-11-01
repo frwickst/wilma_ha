@@ -76,6 +76,12 @@ async def test_day_and_week_sensors(
     assert tomorrow.state == "2"
     assert tomorrow.attributes["date"] == "2026-11-05"
 
+    next_week = hass.states.get(_entity_id(registry, "sensor", "lessons_next_week"))
+    assert next_week.state == "10"
+    assert next_week.attributes["week_start"] == "2026-11-09"
+    assert next_week.attributes["week_end"] == "2026-11-15"
+    assert next_week.attributes["lessons"][0]["start"] == "2026-11-09T08:15:00+02:00"
+
     week = hass.states.get(_entity_id(registry, "sensor", "lessons_this_week"))
     assert week.state == "10"
     assert week.attributes["week_start"] == "2026-11-02"
@@ -274,3 +280,22 @@ async def test_next_lesson_advances_when_a_lesson_starts(
     state = hass.states.get(entity_id)
     assert state.state == "Svenska"
     assert state.attributes["start"] == "2026-11-05T09:15:00+02:00"
+
+
+async def test_lesson_colour_from_wilma(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: MagicMock
+) -> None:
+    def coloured_week(day: datetime.date, user_id: str | None = None):
+        week = make_week(day)
+        week.lessons[0].color = "#a6caf0"
+        week.lessons[1].color = "not a colour"
+        return week
+
+    mock_client.get_schedule.side_effect = coloured_week
+    registry = await _setup(hass, mock_config_entry)
+
+    lessons = hass.states.get(
+        _entity_id(registry, "sensor", "lessons_this_week")
+    ).attributes["lessons"]
+    assert lessons[0]["color"] == "#A6CAF0"
+    assert "color" not in lessons[1]

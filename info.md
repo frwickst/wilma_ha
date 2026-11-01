@@ -13,7 +13,7 @@ attendance marks, bulletins, schedule, exams and homework.
 - Exam calendar, next exam, upcoming exams and latest exam grade
 - Latest homework from the lesson diary
 - Sensors for messages, unread count, attendance marks, bulletins and recent activity
-- Dashboard cards (schedule, next lesson, activity, attendance marks, exams), registered
+- Dashboard cards (weekly timetable, schedule, next lesson, activity, attendance marks, exams), registered
   automatically
 - A ready-made dashboard with a tab per student and an overview: just
   `strategy: {type: custom:wilma}`, or copy `dashboards/wilma.yaml`

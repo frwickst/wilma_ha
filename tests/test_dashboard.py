@@ -267,7 +267,7 @@ def test_one_student(generated: dict[str, Any]) -> None:
         "custom:wilma-next-lesson-card",
         "custom:wilma-schedule-card",
         "custom:wilma-schedule-card",
-        "custom:wilma-schedule-card",
+        "custom:wilma-timetable-card",
         "custom:wilma-activity-card",
         "tile",
         "tile",
@@ -288,8 +288,16 @@ def test_one_student(generated: dict[str, Any]) -> None:
     assert [(card["entity"], card["mode"]) for card in schedules] == [
         ("sensor.wilma_anna_lessons_today", "day"),
         ("sensor.wilma_anna_lessons_tomorrow", "day"),
-        ("sensor.wilma_anna_lessons_this_week", "week"),
     ]
+    # The week is a timetable in a section two columns wide
+    timetable = next(c for c in cards if c["type"] == "custom:wilma-timetable-card")
+    assert timetable["entity"] == "sensor.wilma_anna_lessons_this_week"
+    assert timetable["week"] == "auto"
+    week_section = next(s for s in view["sections"] if timetable in s["cards"])
+    assert week_section["column_span"] == 2
+    assert all(
+        "column_span" not in s for s in view["sections"] if s is not week_section
+    )
     activity = next(c for c in cards if c["type"] == "custom:wilma-activity-card")
     assert activity["latest_message"] == "sensor.wilma_anna_latest_message"
     assert activity["attendance_count"] == "sensor.wilma_anna_attendance_marks"
@@ -382,7 +390,7 @@ def test_translated(generated: dict[str, Any]) -> None:
     views = generated["dashboards"]["two_fi"]["views"]
     assert views[0]["title"] == "Yleiskatsaus"
     titles = {c.get("title") for c in iter_cards(views[1])}
-    assert {"Seuraava tunti", "Tämä viikko", "Kotitehtävät", "Kalenteri"} <= titles
+    assert {"Seuraava tunti", "Kotitehtävät", "Kalenteri"} <= titles
 
 
 def test_students_option(generated: dict[str, Any]) -> None:
@@ -466,6 +474,7 @@ def test_dashboard_yaml_uses_known_cards() -> None:
     assert set(types) <= known_cards()
     assert integration_cards() == {
         "custom:wilma-schedule-card",
+        "custom:wilma-timetable-card",
         "custom:wilma-next-lesson-card",
         "custom:wilma-activity-card",
         "custom:wilma-marks-card",
