@@ -274,6 +274,19 @@ ruff check custom_components/wilma
 mypy custom_components/wilma
 ```
 
+### Releasing
+
+1. Publish the required `wilhelmina` version to PyPI first.
+2. Set `version` in `custom_components/wilma/manifest.json` (and the root `manifest.json`).
+3. Commit, then push an annotated tag matching that version; its message becomes the release
+   notes:
+   ```bash
+   git tag -a v0.3.0 -m "Release notes"
+   git push origin v0.3.0
+   ```
+   The release workflow checks the tag against the manifest and creates the GitHub release,
+   which HACS then offers as a version.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

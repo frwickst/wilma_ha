@@ -1,0 +1,38 @@
+name: Release
+
+# Pushing a tag such as v0.3.0 creates the GitHub release that HACS offers as a version.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check that the tag matches the manifest version
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('custom_components/wilma/manifest.json'))['version'])")
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match manifest version v${version}" >&2
+            exit 1
+          fi
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists"
+            exit 0
+          fi
+          # The annotated tag's message becomes the release notes
+          git for-each-ref --format='%(contents)' "refs/tags/${GITHUB_REF_NAME}" > notes.md
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md --generate-notes --verify-tag
