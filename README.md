@@ -4,14 +4,17 @@ A Home Assistant integration for the Wilma school platform. This integration all
 
 ## Features
 
-- Polls Wilma every 30 minutes (read-only: it never sends, replies to or changes anything)
-- Fires an event for every **new message** and every **new attendance mark** (absence,
-  lateness, positive feedback, missing homework, behaviour note, ...), so you can get a
+- Read-only: it never sends, replies to or changes anything in Wilma
+- **Multiple students**: every child on the account gets their own device (_Wilma {first
+  name}_) with their own entities
+- Events for every **new message**, **new attendance mark** (absence, lateness, positive
+  feedback, missing homework, behaviour note, ...) and **new bulletin**, so you can get a
   notification as soon as something comes in
-- A **schedule calendar** with the student's lessons, and sensors for today's, tomorrow's and
-  this week's lessons
-- Sensors for the latest message, the latest attendance mark and the last update time
-- Stores the latest 50 messages with their content for use in automations
+- A **schedule calendar** per student, plus next lesson and today's, tomorrow's and this
+  week's lessons
+- Sensors for messages, unread count, attendance marks, bulletins and recent activity
+- Options for the update interval and how long new things count as recent
+- English, Finnish and Swedish
 
 Notes:
 
@@ -19,8 +22,8 @@ Notes:
   for new messages (and on first setup only for messages from the last 7 days).
 - Wilma allows one session per account, so the integration logging in logs out the same
   account in the browser or app (and vice versa; the integration logs in again by itself).
-- On first setup, existing messages and marks are recorded as already seen; only things that
-  arrive afterwards fire events.
+- On first setup, existing messages, marks and bulletins are recorded as already seen; only
+  things that arrive afterwards fire events.
 
 ## Installation
 
@@ -40,44 +43,57 @@ Notes:
 
 ## Configuration
 
-1. Go to Configuration → Integrations → Add Integration
-2. Search for "Wilma" and select it
-3. Enter your Wilma server URL, username, and password
-4. Click "Submit"
+1. Go to **Settings → Devices & Services → Add Integration** and search for **Wilma**
+2. Enter your school's Wilma address (e.g. `https://turku.inschool.fi` or
+   `https://espoo.inschool.fi`), your username and password
+
+The students on the account are found automatically. Under **Configure** on the integration
+card you can change:
+
+- **Update interval** (minutes, default 30)
+- **Recent threshold** (hours, default 24): how long new messages, bulletins and attendance
+  marks keep the _recent_ binary sensors on and count as new bulletins
 
 ## Usage
 
-After setup, the integration provides these sensors (entity IDs depend on the account name,
-e.g. `sensor.wilma_<username>_latest_message`):
+Entity IDs follow the device names, e.g. `sensor.wilma_anna_next_lesson` for a student called
+Anna.
 
-- **Latest message**: subject as state; id, sender, timestamp, content and
-  content_markdown as attributes
-- **Latest attendance mark**: the mark type's description as state (e.g. "Aktivt deltagande");
-  date, hour, code, color, course, comment, teacher, plus `marks_this_school_year` and
-  `counts_by_type` as attributes
-- **Last update**: time of the last successful update
-- **Lessons today** / **Lessons tomorrow**: number of lessons as state; `date`, `start` (first
-  lesson), `end` (last lesson) and `lessons` (start, end, subject, teachers, rooms) as
-  attributes. They switch over at midnight. `0` means a day without lessons (weekend,
-  holiday).
-- **Lessons this week**: number of lessons this week, with `week_start`, `week_end` and
-  `lessons` as attributes
+### Per student (device _Wilma {first name}_)
 
-And a calendar:
+| Entity | Type | State and attributes |
+| --- | --- | --- |
+| Latest message | Sensor | Subject; id, sender, timestamp, content, content_markdown |
+| Unread messages | Sensor | Number of unread messages in Wilma |
+| Latest attendance mark | Sensor | Type description (e.g. "Aktivt deltagande"); date, hour, code, color, course, comment, teacher, `marks_this_school_year`, `counts_by_type` |
+| Attendance marks | Sensor | Number of marks this school year; `by_type`, `by_code` |
+| Latest bulletin | Sensor | Title of the newest bulletin; date, author, audience, url, content_html, content_markdown |
+| New bulletins | Sensor | Bulletins that appeared within the recent threshold |
+| Next lesson | Sensor | Subject of the next lesson that hasn't started; date, start, end, teachers, rooms |
+| Lessons today / tomorrow | Sensor | Number of lessons (`0` on days off); date, start (first lesson), end (last lesson), lessons |
+| Lessons this week | Sensor | Number of lessons; week_start, week_end, lessons |
+| Recent message | Binary sensor | On while the latest message is within the recent threshold |
+| Recent bulletin | Binary sensor | On while a new bulletin appeared, or the latest is dated, within the threshold |
+| Recent attendance mark | Binary sensor | On while a new mark appeared, or the latest is dated, within the threshold |
+| Schedule | Calendar | Every lesson as an event (subject, room as location, teachers in the description); `on` during a lesson |
 
-- **Schedule** (`calendar.wilma_<username>_schedule`): every lesson as a calendar event
-  (subject, room as location, teachers in the description). Its state is `on` during a lesson,
-  and its attributes describe the ongoing or next lesson. It shows up in Home Assistant's
-  calendar view, and `calendar.get_events` works for any range (the current and next week
-  are fetched with every update; other weeks are fetched when asked for, at most 12 weeks
-  per query, and cached for an hour).
+The calendar shows up in Home Assistant's calendar view, and `calendar.get_events` works for
+any range: the current and next week are fetched with every update, other weeks when asked
+for (at most 12 weeks per query, cached for an hour).
+
+### Per account (device _Wilma ({username})_)
+
+| Entity | Type | State and attributes |
+| --- | --- | --- |
+| Last update | Sensor | Time of the last successful update |
+| Problem | Binary sensor | On when the last update failed or part of the data couldn't be fetched; `error`, `partial_errors` |
 
 ### Schedule examples
 
 When does school start tomorrow?
 
 ```yaml
-{{ state_attr('sensor.wilma_testuser_lessons_tomorrow', 'start') }}
+{{ state_attr('sensor.wilma_anna_lessons_tomorrow', 'start') }}
 ```
 
 Remind the evening before about the first lesson:
@@ -90,14 +106,14 @@ automation:
         at: "19:00:00"
     condition:
       - condition: numeric_state
-        entity_id: sensor.wilma_testuser_lessons_tomorrow
+        entity_id: sensor.wilma_anna_lessons_tomorrow
         above: 0
     action:
       - service: notify.mobile_app_my_phone
         data:
           title: "School tomorrow"
           message: >
-            {% set first = state_attr('sensor.wilma_testuser_lessons_tomorrow', 'lessons')[0] %}
+            {% set first = state_attr('sensor.wilma_anna_lessons_tomorrow', 'lessons')[0] %}
             Starts {{ as_timestamp(first.start) | timestamp_custom('%H:%M') }} with {{ first.subject }}
 ```
 
@@ -106,7 +122,7 @@ Lessons of any week, e.g. next week, from a script or template:
 ```yaml
 action: calendar.get_events
 target:
-  entity_id: calendar.wilma_testuser_schedule
+  entity_id: calendar.wilma_anna_schedule
 data:
   start_date_time: "{{ (today_at() + timedelta(days=7 - now().weekday())).isoformat() }}"
   duration:
@@ -116,15 +132,18 @@ response_variable: next_week
 
 ### Events
 
+Every event includes `entry_id`, `student_id` and `student_name`.
+
 | Event | Data |
 | --- | --- |
-| `wilma_new_message` | `entry_id`, `id`, `subject`, `sender`, `timestamp`, `content_markdown` |
-| `wilma_new_attendance_mark` | `entry_id`, `key`, `date`, `hour`, `type_id`, `code`, `description`, `color`, `name`, `course`, `comment`, `teacher`, `teacher_code`, `clarification`, `title` |
+| `wilma_new_message` | `id`, `subject`, `sender`, `timestamp`, `unread`, `content_html`, `content_markdown` |
+| `wilma_new_attendance_mark` | `key`, `date`, `hour`, `type_id`, `code`, `description`, `color`, `name`, `course`, `comment`, `teacher`, `teacher_code`, `clarification`, `title` |
+| `wilma_new_bulletin` | `id`, `title`, `date`, `section`, `author`, `url`, `content_html`, `content_markdown` |
 
 Mark types, codes and colours are configured per school. In Turku, for example, positive
 feedback has the code `+` (purple, `#9191FF`), missing homework is `Ogjorda uppgifter`
-(blue, `#0080FF`) and behaviour notes are `Beteende` (grey, `#D4D4D4`). The **Latest
-attendance mark** sensor's `counts_by_type` attribute shows which types your school uses.
+(blue, `#0080FF`) and behaviour notes are `Beteende` (grey, `#D4D4D4`). The **Attendance
+marks** sensor's `by_type` and `by_code` attributes show which types your school uses.
 
 ### Notify on new attendance marks
 
@@ -137,7 +156,7 @@ automation:
     action:
       - service: notify.mobile_app_my_phone
         data:
-          title: "Wilma: {{ trigger.event.data.description }}"
+          title: "Wilma ({{ trigger.event.data.student_name }}): {{ trigger.event.data.description }}"
           message: >
             {{ trigger.event.data.date }}, {{ trigger.event.data.course or '' }}
             {{ trigger.event.data.comment or '' }} ({{ trigger.event.data.teacher }})
@@ -168,6 +187,23 @@ automation:
         data:
           title: "Wilma: {{ trigger.event.data.subject }}"
           message: "{{ trigger.event.data.sender }}"
+```
+
+### Notify on new bulletins
+
+```yaml
+automation:
+  - alias: "Notify on new Wilma bulletin"
+    trigger:
+      - platform: event
+        event_type: wilma_new_bulletin
+    action:
+      - service: notify.mobile_app_my_phone
+        data:
+          title: "Wilma bulletin: {{ trigger.event.data.title }}"
+          message: "{{ (trigger.event.data.content_markdown or '')[:200] }}"
+          data:
+            url: "{{ trigger.event.data.url }}"
 ```
 
 ### AI Summarization Example

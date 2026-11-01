@@ -2,7 +2,7 @@
   "name": "Wilma",
   "content_in_root": false,
   "render_readme": true,
-  "domains": ["calendar", "sensor"],
+  "domains": ["binary_sensor", "calendar", "sensor"],
   "country": ["FI"],
   "homeassistant": "2026.9.0"
 }

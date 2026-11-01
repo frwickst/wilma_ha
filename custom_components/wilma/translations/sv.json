@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Anslut till Wilma",
+        "description": "Följ meddelanden, lektionsanteckningar, anslag och schema för alla elever på kontot.",
+        "data": {
+          "server_url": "Wilmas adress (t.ex. https://turku.inschool.fi)",
+          "username": "Användarnamn",
+          "password": "Lösenord"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunde inte ansluta till Wilma",
+      "invalid_auth": "Fel användarnamn eller lösenord",
+      "unknown": "Oväntat fel"
+    },
+    "abort": {
+      "already_configured": "Detta Wilma-konto är redan konfigurerat"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Inställningar för Wilma",
+        "data": {
+          "scan_interval_minutes": "Uppdateringsintervall (minuter)",
+          "recent_threshold_hours": "Gräns för nytt (timmar)"
+        },
+        "data_description": {
+          "scan_interval_minutes": "Hur ofta data hämtas från Wilma.",
+          "recent_threshold_hours": "Hur länge nya meddelanden, anslag och lektionsanteckningar räknas som nya."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest_message": {
+        "name": "Senaste meddelande"
+      },
+      "unread_count": {
+        "name": "Olästa meddelanden"
+      },
+      "latest_attendance_mark": {
+        "name": "Senaste lektionsanteckning"
+      },
+      "attendance_count": {
+        "name": "Lektionsanteckningar"
+      },
+      "latest_bulletin": {
+        "name": "Senaste anslag"
+      },
+      "unread_bulletin_count": {
+        "name": "Nya anslag"
+      },
+      "next_lesson": {
+        "name": "Nästa lektion"
+      },
+      "lessons_today": {
+        "name": "Lektioner i dag"
+      },
+      "lessons_tomorrow": {
+        "name": "Lektioner i morgon"
+      },
+      "lessons_this_week": {
+        "name": "Lektioner denna vecka"
+      },
+      "last_update": {
+        "name": "Senaste uppdatering"
+      }
+    },
+    "binary_sensor": {
+      "recent_message": {
+        "name": "Nytt meddelande"
+      },
+      "recent_bulletin": {
+        "name": "Nytt anslag"
+      },
+      "recent_attendance": {
+        "name": "Ny lektionsanteckning"
+      },
+      "problem": {
+        "name": "Problem"
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "Schema"
+      }
+    }
+  }
+}

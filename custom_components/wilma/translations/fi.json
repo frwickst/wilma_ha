@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Yhdistä Wilmaan",
+        "description": "Seuraa tilin kaikkien oppilaiden viestejä, tuntimerkintöjä, tiedotteita ja lukujärjestystä.",
+        "data": {
+          "server_url": "Wilman osoite (esim. https://turku.inschool.fi)",
+          "username": "Käyttäjätunnus",
+          "password": "Salasana"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Yhteys Wilmaan epäonnistui",
+      "invalid_auth": "Virheellinen käyttäjätunnus tai salasana",
+      "unknown": "Odottamaton virhe"
+    },
+    "abort": {
+      "already_configured": "Tämä Wilma-tili on jo määritetty"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wilman asetukset",
+        "data": {
+          "scan_interval_minutes": "Päivitysväli (minuuttia)",
+          "recent_threshold_hours": "Tuoreuden raja (tuntia)"
+        },
+        "data_description": {
+          "scan_interval_minutes": "Kuinka usein tiedot haetaan Wilmasta.",
+          "recent_threshold_hours": "Kuinka kauan uudet viestit, tiedotteet ja tuntimerkinnät lasketaan tuoreiksi."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "latest_message": {
+        "name": "Uusin viesti"
+      },
+      "unread_count": {
+        "name": "Lukemattomat viestit"
+      },
+      "latest_attendance_mark": {
+        "name": "Uusin tuntimerkintä"
+      },
+      "attendance_count": {
+        "name": "Tuntimerkinnät"
+      },
+      "latest_bulletin": {
+        "name": "Uusin tiedote"
+      },
+      "unread_bulletin_count": {
+        "name": "Uudet tiedotteet"
+      },
+      "next_lesson": {
+        "name": "Seuraava tunti"
+      },
+      "lessons_today": {
+        "name": "Tunnit tänään"
+      },
+      "lessons_tomorrow": {
+        "name": "Tunnit huomenna"
+      },
+      "lessons_this_week": {
+        "name": "Tunnit tällä viikolla"
+      },
+      "last_update": {
+        "name": "Viimeisin päivitys"
+      }
+    },
+    "binary_sensor": {
+      "recent_message": {
+        "name": "Tuore viesti"
+      },
+      "recent_bulletin": {
+        "name": "Tuore tiedote"
+      },
+      "recent_attendance": {
+        "name": "Tuore tuntimerkintä"
+      },
+      "problem": {
+        "name": "Ongelma"
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "Lukujärjestys"
+      }
+    }
+  }
+}

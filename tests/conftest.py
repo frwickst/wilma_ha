@@ -12,9 +12,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from wilhelmina import (
     AttendanceMark,
     AttendanceReport,
+    Bulletin,
+    BulletinSection,
     Lesson,
     MarkType,
     Message,
+    Role,
     ScheduleGroup,
     ScheduleRoom,
     ScheduleTeacher,
@@ -146,33 +149,89 @@ def mock_config_entry() -> MockConfigEntry:
     )
 
 
-@pytest.fixture
-def mock_client() -> Generator[MagicMock]:
-    """A Wilma client returning one recent and one old message, and two marks."""
+STUDENT = Role(name="Anna Student", type="guardian", primus_id=345, slug="/!12345")
+SECOND_STUDENT = Role(name="Bo Student", type="guardian", primus_id=678, slug="/!67890")
+
+
+def make_bulletins(*ids: int) -> list[Bulletin]:
+    """Current bulletins, newest (highest ID) first, dated a day apart."""
+    today = datetime.date.today()
+    return [
+        Bulletin(
+            id=news_id,
+            title=f"Bulletin {news_id}",
+            section=BulletinSection.CURRENT,
+            date=today - datetime.timedelta(days=index),
+            author="Principal",
+        )
+        for index, news_id in enumerate(sorted(ids, reverse=True))
+    ]
+
+
+def _messages(**kwargs: object) -> list[Message]:
+    return [
+        make_message(2, "Recent message", days_ago=1),
+        make_message(1, "Old message", days_ago=30, unread=False),
+    ]
+
+
+def _report(*args: object, **kwargs: object) -> AttendanceReport:
+    return make_report(
+        make_mark(POSITIVE, days_ago=2, hour=9, comment="Great work"),
+        make_mark(HOMEWORK, days_ago=5, hour=10),
+    )
+
+
+async def _fetch_content(
+    messages: list[Message], *args: object, **kwargs: object
+) -> None:
+    for message in messages:
+        message.content_html = f"<p>Content {message.id}</p>"
+
+
+async def _get_bulletin(news_id: int, user_id: str | None = None) -> Bulletin:
+    return Bulletin(
+        id=news_id,
+        title=f"Bulletin {news_id}",
+        author="atea (Anna Teacher)",
+        audience="Guardians",
+        content_html=f"<p>Body {news_id}</p>",
+    )
+
+
+def build_client(students: list[Role]) -> MagicMock:
+    """A Wilma client mock serving the same data for every student."""
     client = MagicMock()
     client.timezone = HELSINKI
+    client.user_id = students[0].user_id if students else None
     client.today = lambda: datetime.datetime.now(HELSINKI).date()
-    client.get_schedule = AsyncMock(side_effect=lambda day: make_week(day))
     client.login = AsyncMock()
     client.close = AsyncMock()
-    client.get_messages = AsyncMock(
-        side_effect=lambda: [
-            make_message(2, "Recent message", days_ago=1),
-            make_message(1, "Old message", days_ago=30, unread=False),
-        ]
+    client.get_students = AsyncMock(return_value=students)
+    client.get_messages = AsyncMock(side_effect=_messages)
+    client.fetch_content = AsyncMock(side_effect=_fetch_content)
+    client.get_attendance = AsyncMock(side_effect=_report)
+    client.get_schedule = AsyncMock(
+        side_effect=lambda day, user_id=None: make_week(day)
     )
-
-    async def fetch_content(messages: list[Message], *args: object) -> None:
-        for message in messages:
-            message.content_html = f"<p>Content {message.id}</p>"
-
-    client.fetch_content = AsyncMock(side_effect=fetch_content)
-    client.get_attendance = AsyncMock(
-        side_effect=lambda *args, **kwargs: make_report(
-            make_mark(POSITIVE, days_ago=2, hour=9, comment="Great work"),
-            make_mark(HOMEWORK, days_ago=5, hour=10),
-        )
+    client.get_bulletins = AsyncMock(
+        side_effect=lambda user_id=None: make_bulletins(10, 9)
     )
+    client.get_bulletin = AsyncMock(side_effect=_get_bulletin)
+    return client
 
+
+@pytest.fixture
+def mock_client() -> Generator[MagicMock]:
+    """A Wilma client for an account with one student."""
+    client = build_client([STUDENT])
+    with patch("custom_components.wilma.coordinator.WilmaClient", return_value=client):
+        yield client
+
+
+@pytest.fixture
+def mock_two_student_client() -> Generator[MagicMock]:
+    """A Wilma client for an account with two students."""
+    client = build_client([STUDENT, SECOND_STUDENT])
     with patch("custom_components.wilma.coordinator.WilmaClient", return_value=client):
         yield client

@@ -40,7 +40,7 @@ async def _setup(hass: HomeAssistant, entry: MockConfigEntry) -> er.EntityRegist
 
 
 def _entity_id(registry: er.EntityRegistry, domain: str, key: str) -> str:
-    entity_id = registry.async_get_entity_id(domain, DOMAIN, f"test_{key}")
+    entity_id = registry.async_get_entity_id(domain, DOMAIN, f"test_345_{key}")
     assert entity_id is not None
     return entity_id
 
@@ -113,7 +113,9 @@ async def test_sensors_roll_over_at_midnight(
 async def test_holiday_shows_zero_lessons(
     hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_client: MagicMock
 ) -> None:
-    mock_client.get_schedule.side_effect = lambda day: make_week(day, weekdays=0)
+    mock_client.get_schedule.side_effect = lambda day, user_id=None: make_week(
+        day, weekdays=0
+    )
     registry = await _setup(hass, mock_config_entry)
 
     today = hass.states.get(_entity_id(registry, "sensor", "lessons_today"))
@@ -241,8 +243,34 @@ async def test_calendar_query_is_capped(
     mock_client.get_schedule.reset_mock()
 
     weeks = await coordinator.async_get_weeks(
-        datetime.date(2027, 1, 1), datetime.date(2027, 12, 31)
+        "!12345", datetime.date(2027, 1, 1), datetime.date(2027, 12, 31)
     )
 
     assert len(weeks) == 12
     assert mock_client.get_schedule.await_count == 12
+
+
+async def test_next_lesson_advances_when_a_lesson_starts(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_client: MagicMock,
+    frozen_time: FrozenDateTimeFactory,
+) -> None:
+    registry = await _setup(hass, mock_config_entry)
+    entity_id = _entity_id(registry, "sensor", "next_lesson")
+
+    state = hass.states.get(entity_id)
+    assert state.state == "Matematik"
+    assert state.attributes["date"] == "2026-11-05"
+    assert state.attributes["start"] == "2026-11-05T08:15:00+02:00"
+    assert state.attributes["rooms"] == ["419"]
+
+    # Once Thursday's first lesson starts, the next one is the second
+    started = datetime.datetime(2026, 11, 5, 8, 15, 2, tzinfo=HELSINKI)
+    frozen_time.move_to(started)
+    async_fire_time_changed(hass, started)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.state == "Svenska"
+    assert state.attributes["start"] == "2026-11-05T09:15:00+02:00"

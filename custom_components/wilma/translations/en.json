@@ -3,9 +3,9 @@
     "step": {
       "user": {
         "title": "Connect to Wilma",
-        "description": "Set up Wilma integration to access your messages, lesson marks and schedule.",
+        "description": "Set up Wilma to follow messages, lesson marks, bulletins and the schedule of every student on the account.",
         "data": {
-          "server_url": "Wilma Server URL (e.g. https://turku.inschool.fi)",
+          "server_url": "Wilma server URL (e.g. https://turku.inschool.fi)",
           "username": "Username",
           "password": "Password"
         }
@@ -20,16 +20,43 @@
       "already_configured": "This Wilma account is already configured"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Wilma options",
+        "data": {
+          "scan_interval_minutes": "Update interval (minutes)",
+          "recent_threshold_hours": "Recent threshold (hours)"
+        },
+        "data_description": {
+          "scan_interval_minutes": "How often to fetch data from Wilma.",
+          "recent_threshold_hours": "How long new messages, bulletins and lesson marks count as recent."
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "latest_message": {
         "name": "Latest message"
       },
+      "unread_count": {
+        "name": "Unread messages"
+      },
       "latest_attendance_mark": {
         "name": "Latest attendance mark"
       },
-      "last_update": {
-        "name": "Last update"
+      "attendance_count": {
+        "name": "Attendance marks"
+      },
+      "latest_bulletin": {
+        "name": "Latest bulletin"
+      },
+      "unread_bulletin_count": {
+        "name": "New bulletins"
+      },
+      "next_lesson": {
+        "name": "Next lesson"
       },
       "lessons_today": {
         "name": "Lessons today"
@@ -39,6 +66,23 @@
       },
       "lessons_this_week": {
         "name": "Lessons this week"
+      },
+      "last_update": {
+        "name": "Last update"
+      }
+    },
+    "binary_sensor": {
+      "recent_message": {
+        "name": "Recent message"
+      },
+      "recent_bulletin": {
+        "name": "Recent bulletin"
+      },
+      "recent_attendance": {
+        "name": "Recent attendance mark"
+      },
+      "problem": {
+        "name": "Problem"
       }
     },
     "calendar": {

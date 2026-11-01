@@ -6,11 +6,26 @@ import logging
 from typing import Any
 
 import probatio
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from wilhelmina import AuthenticationError, WilmaClient, WilmaError
 
-from .const import CONF_PASSWORD, CONF_SERVER_URL, CONF_USERNAME, DOMAIN
+from .const import (
+    CONF_PASSWORD,
+    CONF_RECENT_THRESHOLD_HOURS,
+    CONF_SCAN_INTERVAL_MINUTES,
+    CONF_SERVER_URL,
+    CONF_USERNAME,
+    DEFAULT_RECENT_THRESHOLD_HOURS,
+    DEFAULT_SCAN_INTERVAL_MINUTES,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +58,12 @@ class WilmaConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Wilma."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Options for an existing entry."""
+        return WilmaOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -78,6 +99,36 @@ class WilmaConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
+
+
+class WilmaOptionsFlow(OptionsFlow):
+    """Polling interval and how long new items count as recent."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show and store the options."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        options = self.config_entry.options
+        schema = probatio.Schema(
+            {
+                probatio.Required(
+                    CONF_SCAN_INTERVAL_MINUTES,
+                    default=options.get(
+                        CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES
+                    ),
+                ): probatio.All(probatio.Coerce(int), probatio.Range(min=5, max=360)),
+                probatio.Required(
+                    CONF_RECENT_THRESHOLD_HOURS,
+                    default=options.get(
+                        CONF_RECENT_THRESHOLD_HOURS, DEFAULT_RECENT_THRESHOLD_HOURS
+                    ),
+                ): probatio.All(probatio.Coerce(int), probatio.Range(min=1, max=168)),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)
 
 
 class CannotConnect(HomeAssistantError):

@@ -6,16 +6,15 @@ from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-    SensorEntityDescription,
-)
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.event import (
+    async_track_point_in_time,
+    async_track_time_change,
+)
+from homeassistant.util import dt as dt_util
 from wilhelmina import Lesson, WeekSchedule
 
 from .const import (
@@ -25,54 +24,27 @@ from .const import (
     ATTR_SENDER,
     ATTR_SUBJECT,
     ATTR_TIMESTAMP,
+    SENSOR_ATTENDANCE_COUNT,
     SENSOR_LAST_UPDATE,
     SENSOR_LATEST_ATTENDANCE_MARK,
+    SENSOR_LATEST_BULLETIN,
     SENSOR_LATEST_MESSAGE,
     SENSOR_LESSONS_THIS_WEEK,
     SENSOR_LESSONS_TODAY,
     SENSOR_LESSONS_TOMORROW,
+    SENSOR_NEXT_LESSON,
+    SENSOR_UNREAD_BULLETIN_COUNT,
+    SENSOR_UNREAD_COUNT,
 )
 from .coordinator import (
+    StudentData,
     WilmaConfigEntry,
     WilmaCoordinator,
     lesson_attributes,
     mark_attributes,
     week_start,
 )
-from .entity import device_info
-
-LATEST_MESSAGE = SensorEntityDescription(
-    key=SENSOR_LATEST_MESSAGE,
-    translation_key=SENSOR_LATEST_MESSAGE,
-    icon="mdi:email",
-)
-LATEST_ATTENDANCE_MARK = SensorEntityDescription(
-    key=SENSOR_LATEST_ATTENDANCE_MARK,
-    translation_key=SENSOR_LATEST_ATTENDANCE_MARK,
-    icon="mdi:clipboard-text-clock",
-)
-LAST_UPDATE = SensorEntityDescription(
-    key=SENSOR_LAST_UPDATE,
-    translation_key=SENSOR_LAST_UPDATE,
-    icon="mdi:update",
-    device_class=SensorDeviceClass.TIMESTAMP,
-    entity_category=EntityCategory.DIAGNOSTIC,
-)
-LESSONS_TODAY = SensorEntityDescription(
-    key=SENSOR_LESSONS_TODAY,
-    translation_key=SENSOR_LESSONS_TODAY,
-    icon="mdi:calendar-today",
-)
-LESSONS_TOMORROW = SensorEntityDescription(
-    key=SENSOR_LESSONS_TOMORROW,
-    translation_key=SENSOR_LESSONS_TOMORROW,
-    icon="mdi:calendar-arrow-right",
-)
-LESSONS_THIS_WEEK = SensorEntityDescription(
-    key=SENSOR_LESSONS_THIS_WEEK,
-    translation_key=SENSOR_LESSONS_THIS_WEEK,
-    icon="mdi:calendar-week",
-)
+from .entity import WilmaAccountEntity, WilmaStudentEntity
 
 
 async def async_setup_entry(
@@ -80,59 +52,96 @@ async def async_setup_entry(
     entry: WilmaConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Wilma sensor platform."""
+    """Set up Wilma sensors: account-level ones and a set per student."""
     coordinator = entry.runtime_data
-    async_add_entities(
-        [
-            WilmaLatestMessageSensor(coordinator, LATEST_MESSAGE, entry),
-            WilmaLatestAttendanceMarkSensor(coordinator, LATEST_ATTENDANCE_MARK, entry),
-            WilmaLastUpdateSensor(coordinator, LAST_UPDATE, entry),
-            WilmaLessonsOnDaySensor(coordinator, LESSONS_TODAY, entry, days_ahead=0),
-            WilmaLessonsOnDaySensor(coordinator, LESSONS_TOMORROW, entry, days_ahead=1),
-            WilmaLessonsThisWeekSensor(coordinator, LESSONS_THIS_WEEK, entry),
-        ]
-    )
+    entities: list[SensorEntity] = [
+        WilmaLastUpdateSensor(coordinator, entry, SENSOR_LAST_UPDATE)
+    ]
+    for student in coordinator.data.students.values():
+        entities.extend(
+            [
+                WilmaLatestMessageSensor(
+                    coordinator, entry, student, SENSOR_LATEST_MESSAGE
+                ),
+                WilmaUnreadCountSensor(
+                    coordinator, entry, student, SENSOR_UNREAD_COUNT
+                ),
+                WilmaLatestAttendanceMarkSensor(
+                    coordinator, entry, student, SENSOR_LATEST_ATTENDANCE_MARK
+                ),
+                WilmaAttendanceCountSensor(
+                    coordinator, entry, student, SENSOR_ATTENDANCE_COUNT
+                ),
+                WilmaLatestBulletinSensor(
+                    coordinator, entry, student, SENSOR_LATEST_BULLETIN
+                ),
+                WilmaNewBulletinCountSensor(
+                    coordinator, entry, student, SENSOR_UNREAD_BULLETIN_COUNT
+                ),
+                WilmaNextLessonSensor(coordinator, entry, student, SENSOR_NEXT_LESSON),
+                WilmaLessonsOnDaySensor(
+                    coordinator, entry, student, SENSOR_LESSONS_TODAY, days_ahead=0
+                ),
+                WilmaLessonsOnDaySensor(
+                    coordinator, entry, student, SENSOR_LESSONS_TOMORROW, days_ahead=1
+                ),
+                WilmaLessonsThisWeekSensor(
+                    coordinator, entry, student, SENSOR_LESSONS_THIS_WEEK
+                ),
+            ]
+        )
+    async_add_entities(entities)
 
 
-class WilmaEntity(CoordinatorEntity[WilmaCoordinator], SensorEntity):
-    """Base class for Wilma sensors."""
+class WilmaLastUpdateSensor(WilmaAccountEntity, SensorEntity):
+    """Time of the last successful update."""
 
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: WilmaCoordinator,
-        description: SensorEntityDescription,
-        entry: WilmaConfigEntry,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._attr_unique_id = f"{entry.entry_id}_{description.key}"
-        self._attr_device_info = device_info(entry)
-
-
-class WilmaLatestMessageSensor(WilmaEntity):
-    """The newest Wilma message, with its subject as state."""
+    _attr_icon = "mdi:update"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
-    def _message(self) -> dict[str, Any] | None:
+    def native_value(self) -> datetime | None:
+        """Return the time of the last successful update."""
         data = self.coordinator.data
-        return data.latest_message if data else None
+        return data.last_update if data else None
+
+
+class WilmaStudentSensor(WilmaStudentEntity, SensorEntity):
+    """Base class for per-student sensors."""
+
+    def _value(self, student: StudentData) -> Any:
+        raise NotImplementedError
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        return None
 
     @property
-    def native_value(self) -> str | None:
-        """Return the subject of the latest message."""
-        message = self._message
-        return message.get("subject") if message else None
+    def native_value(self) -> Any:
+        """Return the sensor's value for its student."""
+        student = self.student
+        return self._value(student) if student else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return details of the latest message."""
-        message = self._message
+        """Return the sensor's attributes for its student."""
+        student = self.student
+        return self._attributes(student) if student else None
+
+
+class WilmaLatestMessageSensor(WilmaStudentSensor):
+    """The newest message, with its subject as state."""
+
+    _attr_icon = "mdi:email"
+
+    def _value(self, student: StudentData) -> str | None:
+        message = student.latest_message
+        return message.get("subject") if message else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        message = student.latest_message
         if not message:
             return None
-
         attrs: dict[str, Any] = {
             ATTR_ID: message.get("id"),
             ATTR_SUBJECT: message.get("subject"),
@@ -145,60 +154,119 @@ class WilmaLatestMessageSensor(WilmaEntity):
         return attrs
 
 
-class WilmaLatestAttendanceMarkSensor(WilmaEntity):
+class WilmaUnreadCountSensor(WilmaStudentSensor):
+    """Number of unread messages in the inbox, as Wilma reports them."""
+
+    _attr_icon = "mdi:email-alert"
+    _attr_native_unit_of_measurement = "messages"
+
+    def _value(self, student: StudentData) -> int:
+        return student.unread_count
+
+
+class WilmaLatestAttendanceMarkSensor(WilmaStudentSensor):
     """The most recent attendance mark (absence, feedback, homework note, etc.)."""
 
-    @property
-    def native_value(self) -> str | None:
-        """Return the description of the latest mark's type."""
-        data = self.coordinator.data
-        mark = data.latest_attendance_mark if data else None
+    _attr_icon = "mdi:clipboard-text-clock"
+
+    def _value(self, student: StudentData) -> str | None:
+        mark = student.latest_attendance_mark
         return mark.type.description if mark else None
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return details of the latest mark, and mark counts for the school year."""
-        data = self.coordinator.data
-        if not data or not data.attendance:
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        if not student.attendance:
             return None
-
         attrs: dict[str, Any] = {}
-        mark = data.latest_attendance_mark
-        if mark:
+        if mark := student.latest_attendance_mark:
             attrs.update(mark_attributes(mark))
-        attrs["marks_this_school_year"] = len(data.attendance.marks)
-        attrs["counts_by_type"] = dict(
-            Counter(m.type.description for m in data.attendance.marks)
-        )
+        attrs["marks_this_school_year"] = len(student.attendance.marks)
+        attrs["counts_by_type"] = _counts_by_type(student)
         return attrs
 
 
-class WilmaLastUpdateSensor(WilmaEntity):
-    """Time of the last successful update."""
+class WilmaAttendanceCountSensor(WilmaStudentSensor):
+    """Number of attendance marks this school year, with a breakdown by type."""
 
-    @property
-    def native_value(self) -> datetime | None:
-        """Return the time of the last successful update."""
-        data = self.coordinator.data
-        return data.last_update if data else None
+    _attr_icon = "mdi:clipboard-list"
+    _attr_native_unit_of_measurement = "marks"
+
+    def _value(self, student: StudentData) -> int | None:
+        return len(student.attendance.marks) if student.attendance else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        if not student.attendance:
+            return None
+        by_code: Counter[str] = Counter(m.type.code for m in student.attendance.marks)
+        return {"by_type": _counts_by_type(student), "by_code": dict(by_code)}
 
 
-class WilmaScheduleSensor(WilmaEntity):
-    """Base class for sensors showing lessons, refreshed at midnight as well."""
+def _counts_by_type(student: StudentData) -> dict[str, int]:
+    marks = student.attendance.marks if student.attendance else []
+    return dict(Counter(mark.type.description for mark in marks))
 
-    _attr_native_unit_of_measurement = "lessons"
+
+class WilmaLatestBulletinSensor(WilmaStudentSensor):
+    """The newest bulletin on the school's bulletin board, with its title as state."""
+
+    _attr_icon = "mdi:bulletin-board"
+
+    def _value(self, student: StudentData) -> str | None:
+        bulletin = student.latest_bulletin
+        return bulletin.get("title") if bulletin else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        bulletin = student.latest_bulletin
+        if not bulletin:
+            return None
+        return {
+            key: bulletin.get(key)
+            for key in (
+                "id",
+                "title",
+                "date",
+                "section",
+                "author",
+                "audience",
+                "url",
+                "content_html",
+                "content_markdown",
+            )
+        }
+
+
+class WilmaNewBulletinCountSensor(WilmaStudentSensor):
+    """Number of bulletins that appeared within the recent threshold."""
+
+    _attr_icon = "mdi:bulletin-board"
+    _attr_native_unit_of_measurement = "bulletins"
+
+    def _value(self, student: StudentData) -> int:
+        return student.new_bulletin_count
+
+
+class WilmaScheduleSensor(WilmaStudentSensor):
+    """Base class for schedule sensors, which also re-evaluate as time passes."""
+
+    _unsub_timer: CALLBACK_TYPE | None = None
 
     async def async_added_to_hass(self) -> None:
         """Re-evaluate at the start of each day, between coordinator updates."""
         await super().async_added_to_hass()
         self.async_on_remove(
             async_track_time_change(
-                self.hass, self._handle_new_day, hour=0, minute=0, second=1
+                self.hass, self._handle_time, hour=0, minute=0, second=1
             )
         )
+        self.async_on_remove(self._cancel_timer)
 
     @callback
-    def _handle_new_day(self, now: datetime) -> None:
+    def _cancel_timer(self) -> None:
+        if self._unsub_timer:
+            self._unsub_timer()
+            self._unsub_timer = None
+
+    @callback
+    def _handle_time(self, now: datetime) -> None:
         self.async_write_ha_state()
 
     def _today(self) -> date:
@@ -214,35 +282,89 @@ class WilmaScheduleSensor(WilmaEntity):
         }
 
 
+class WilmaNextLessonSensor(WilmaScheduleSensor):
+    """The next lesson that has not started yet, with its subject as state."""
+
+    _attr_icon = "mdi:school"
+
+    def _next(self, student: StudentData) -> Lesson | None:
+        now = dt_util.now()
+        tz = self.coordinator.timezone
+        for lesson in student.upcoming_lessons():
+            if lesson.starts_at.replace(tzinfo=tz) > now:
+                return lesson
+        return None
+
+    def _value(self, student: StudentData) -> str | None:
+        lesson = self._next(student)
+        return lesson.subject if lesson else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        lesson = self._next(student)
+        if not lesson:
+            return None
+        return {
+            "date": lesson.date.isoformat(),
+            **lesson_attributes(lesson, self.coordinator.timezone),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Also schedule a re-evaluation for when the next lesson starts."""
+        await super().async_added_to_hass()
+        self._schedule_next()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        super()._handle_coordinator_update()
+        self._schedule_next()
+
+    @callback
+    def _handle_time(self, now: datetime) -> None:
+        super()._handle_time(now)
+        self._schedule_next()
+
+    @callback
+    def _schedule_next(self) -> None:
+        self._cancel_timer()
+        student = self.student
+        lesson = self._next(student) if student else None
+        if lesson:
+            starts = lesson.starts_at.replace(tzinfo=self.coordinator.timezone)
+            self._unsub_timer = async_track_point_in_time(
+                self.hass, self._handle_time, starts + timedelta(seconds=1)
+            )
+
+
 class WilmaLessonsOnDaySensor(WilmaScheduleSensor):
     """Number of lessons on a day relative to today, with the lessons as attributes."""
+
+    _attr_native_unit_of_measurement = "lessons"
 
     def __init__(
         self,
         coordinator: WilmaCoordinator,
-        description: SensorEntityDescription,
         entry: WilmaConfigEntry,
+        student: StudentData,
+        key: str,
         days_ahead: int,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, description, entry)
+        super().__init__(coordinator, entry, student, key)
         self._days_ahead = days_ahead
+        self._attr_icon = (
+            "mdi:calendar-today" if days_ahead == 0 else "mdi:calendar-arrow-right"
+        )
 
-    def _lessons(self) -> tuple[date, list[Lesson] | None]:
-        day = self._today() + timedelta(days=self._days_ahead)
-        data = self.coordinator.data
-        return day, data.lessons_on(day) if data else None
+    def _day(self) -> date:
+        return self._today() + timedelta(days=self._days_ahead)
 
-    @property
-    def native_value(self) -> int | None:
-        """Return the number of lessons on the day."""
-        _, lessons = self._lessons()
+    def _value(self, student: StudentData) -> int | None:
+        lessons = student.lessons_on(self._day())
         return len(lessons) if lessons is not None else None
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return the day, its first start and last end, and its lessons."""
-        day, lessons = self._lessons()
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        day = self._day()
+        lessons = student.lessons_on(day)
         if lessons is None:
             return None
         return {"date": day.isoformat(), **self._summary(lessons)}
@@ -251,20 +373,18 @@ class WilmaLessonsOnDaySensor(WilmaScheduleSensor):
 class WilmaLessonsThisWeekSensor(WilmaScheduleSensor):
     """Number of lessons this week, with the lessons as attributes."""
 
-    def _week(self) -> WeekSchedule | None:
-        data = self.coordinator.data
-        return data.schedule.get(week_start(self._today())) if data else None
+    _attr_icon = "mdi:calendar-week"
+    _attr_native_unit_of_measurement = "lessons"
 
-    @property
-    def native_value(self) -> int | None:
-        """Return the number of lessons this week."""
-        week = self._week()
+    def _week(self, student: StudentData) -> WeekSchedule | None:
+        return student.schedule.get(week_start(self._today()))
+
+    def _value(self, student: StudentData) -> int | None:
+        week = self._week(student)
         return len(week.lessons) if week else None
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return the week's dates, start and end times, and lessons."""
-        week = self._week()
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        week = self._week(student)
         if not week:
             return None
         return {

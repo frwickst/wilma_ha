@@ -5,17 +5,13 @@ attendance marks and schedule.
 
 ## Features
 
-- Polls Wilma every 30 minutes (read-only)
-- Fires `wilma_new_message` and `wilma_new_attendance_mark` events for new messages and new
-  attendance marks (absences, positive feedback, missing homework, behaviour notes, ...)
-- A schedule calendar with the student's lessons
-- Provides sensors for:
-  - Latest message
-  - Latest attendance mark
-  - Lessons today, tomorrow and this week
-  - Last update time
-- Stores message content for access by automations
-- Perfect for creating AI-powered notification workflows
+- Read-only; polls Wilma every 30 minutes (configurable)
+- Multiple students: a device per child on the account
+- Events for new messages, attendance marks (absences, positive feedback, missing homework,
+  behaviour notes, ...) and bulletins
+- Schedule calendar, next lesson and today's, tomorrow's and this week's lessons
+- Sensors for messages, unread count, attendance marks, bulletins and recent activity
+- English, Finnish and Swedish
 
 ## Usage
 
