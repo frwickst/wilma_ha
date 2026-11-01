@@ -1,0 +1,165 @@
+# Wilma dashboard for one student, to copy and customise.
+#
+# This is what the dashboard strategy (`strategy: {type: custom:wilma}`) generates for a
+# single student. To use it:
+#   1. Settings → Dashboards → Add dashboard → New dashboard from scratch, and open it.
+#   2. ⋮ → Edit dashboard, then ⋮ → Raw configuration editor, and paste this file.
+#   3. Replace the placeholders below, then save:
+#        - "wilma_anna" with your student's entity ID prefix: the device "Wilma {first name}"
+#          names its entities, e.g. sensor.wilma_anna_next_lesson for a student called Anna
+#          (check Settings → Devices & services → Wilma → the student's device);
+#        - "wilma_username" with your account device's prefix ("Wilma ({username})");
+#        - "Anna" and "anna" (the view title and path) with your student's name.
+#   For another student, copy the whole view (from "- title:" to the end) below it and
+#   replace the names again.
+#
+# The custom:wilma-* cards come with the integration; no dashboard resource is needed.
+
+views:
+  - title: Anna
+    path: anna
+    type: sections
+    max_columns: 4
+    # Shown only while there is something unread, or while the account has a problem
+    badges:
+      - type: entity
+        entity: sensor.wilma_anna_unread_messages
+        name: Unread messages
+        show_name: true
+        visibility:
+          - condition: numeric_state
+            entity: sensor.wilma_anna_unread_messages
+            above: 0
+      - type: entity
+        entity: sensor.wilma_anna_new_bulletins
+        name: New bulletins
+        show_name: true
+        visibility:
+          - condition: numeric_state
+            entity: sensor.wilma_anna_new_bulletins
+            above: 0
+      - type: entity
+        entity: binary_sensor.wilma_username_problem
+        name: Problem
+        show_name: true
+        color: red
+        visibility:
+          - condition: state
+            entity: binary_sensor.wilma_username_problem
+            state: 'on'
+    sections:
+      # Today: next lesson, today's and tomorrow's lessons
+      - type: grid
+        cards:
+          - type: custom:wilma-next-lesson-card
+            entity: sensor.wilma_anna_next_lesson
+            title: Next lesson
+            grid_options:
+              columns: 12
+          - type: custom:wilma-schedule-card
+            entity: sensor.wilma_anna_lessons_today
+            mode: day
+            title: Schedule
+          - type: custom:wilma-schedule-card
+            entity: sensor.wilma_anna_lessons_tomorrow
+            mode: day
+            title: Schedule
+      # This week's schedule
+      - type: grid
+        cards:
+          - type: custom:wilma-schedule-card
+            entity: sensor.wilma_anna_lessons_this_week
+            mode: week
+            title: This week
+      # Recent activity: messages, attendance marks and bulletins, with who sent them
+      - type: grid
+        cards:
+          - type: custom:wilma-activity-card
+            latest_message: sensor.wilma_anna_latest_message
+            attendance_count: sensor.wilma_anna_attendance_marks
+            latest_bulletin: sensor.wilma_anna_latest_bulletin
+            latest_attendance_mark: sensor.wilma_anna_latest_attendance_mark
+            max_items: 10
+            title: Recent activity
+          - type: tile
+            entity: sensor.wilma_anna_unread_messages
+            name: Unread messages
+            grid_options:
+              columns: 6
+          - type: tile
+            entity: sensor.wilma_anna_new_bulletins
+            name: New bulletins
+            grid_options:
+              columns: 6
+      # Attendance marks this school year, by type
+      - type: grid
+        cards:
+          - type: custom:wilma-marks-card
+            entity: sensor.wilma_anna_attendance_marks
+            recent: 3
+            title: Attendance marks
+      # Exams
+      - type: grid
+        cards:
+          - type: custom:wilma-exams-card
+            entity: sensor.wilma_anna_upcoming_exams
+            max_items: 5
+            title: Upcoming exams
+          - type: tile
+            entity: sensor.wilma_anna_latest_exam_grade
+            name: Latest exam grade
+            grid_options:
+              columns: 12
+      # The latest bulletin and homework (the markdown card renders the templates)
+      - type: grid
+        cards:
+          - type: markdown
+            title: Latest bulletin
+            content: |-
+              {%- set e = 'sensor.wilma_anna_latest_bulletin' -%}
+              {%- if states(e) in ['unknown', 'unavailable', ''] -%}
+              No bulletins
+              {%- else -%}
+              **{{ states(e) }}**
+
+              {{ state_attr(e, 'date') or '' }}{% if state_attr(e, 'author') %} · {{ state_attr(e, 'author') }}{% endif %}
+
+              {{ state_attr(e, 'content_markdown') or '' }}
+              {%- if state_attr(e, 'url') %}
+
+              [Open in Wilma]({{ state_attr(e, 'url') }})
+              {%- endif %}
+              {%- endif %}
+          - type: markdown
+            title: Homework
+            content: |-
+              {%- set e = 'sensor.wilma_anna_latest_homework' -%}
+              {%- set items = state_attr(e, 'recent_homework') or [] -%}
+              {%- if not items and states(e) not in ['unknown', 'unavailable', ''] -%}
+              {%- set items = [{'date': state_attr(e, 'date'), 'subject': state_attr(e, 'subject'), 'text': states(e)}] -%}
+              {%- endif -%}
+              {%- for item in items[:5] %}
+              - **{{ item.subject or '' }}** ({{ item.date or '' }}): {{ (item.text or '') | replace('\n', ' ') }}
+              {%- else -%}
+              No homework
+              {%- endfor %}
+      # Schedule and exam calendars
+      - type: grid
+        cards:
+          - type: calendar
+            title: Calendar
+            initial_view: listWeek
+            entities:
+              - calendar.wilma_anna_schedule
+              - calendar.wilma_anna_exams
+      # The account: last update and problem
+      - type: grid
+        cards:
+          - type: entities
+            title: Wilma account
+            state_color: true
+            entities:
+              - entity: sensor.wilma_username_last_update
+                name: Last update
+              - entity: binary_sensor.wilma_username_problem
+                name: Problem

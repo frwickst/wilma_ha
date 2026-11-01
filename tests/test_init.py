@@ -29,9 +29,13 @@ STUDENT_ENTITIES = {
         "lessons_today",
         "lessons_tomorrow",
         "lessons_this_week",
+        "next_exam",
+        "upcoming_exams",
+        "latest_exam_grade",
+        "latest_homework",
     ),
     "binary_sensor": ("recent_message", "recent_bulletin", "recent_attendance"),
-    "calendar": ("schedule",),
+    "calendar": ("schedule", "exams"),
 }
 ACCOUNT_ENTITIES = {"sensor": ("last_update",), "binary_sensor": ("problem",)}
 

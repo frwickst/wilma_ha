@@ -17,6 +17,7 @@ from wilhelmina import (
     Lesson,
     MarkType,
     Message,
+    Overview,
     Role,
     ScheduleGroup,
     ScheduleRoom,
@@ -168,6 +169,80 @@ def make_bulletins(*ids: int) -> list[Bulletin]:
     ]
 
 
+def iso_day(days_from_now: int) -> str:
+    """An ISO date ``days_from_now`` days from today (negative for the past)."""
+    return (datetime.date.today() + datetime.timedelta(days=days_from_now)).isoformat()
+
+
+def finnish_day(days_from_now: int) -> str:
+    """A ``d.m.yyyy`` date ``days_from_now`` days from today."""
+    day = datetime.date.today() + datetime.timedelta(days=days_from_now)
+    return f"{day.day}.{day.month}.{day.year}"
+
+
+TEACHER = {"TeacherId": 1, "TeacherName": "Anna Teacher", "TeacherCode": "atea"}
+
+
+def overview_exam(
+    exam_id: int,
+    days_from_now: int,
+    subject: str,
+    info: str | None = "Chapters 1-3",
+    grade: str | None = None,
+) -> dict[str, object]:
+    """An exam as listed in the overview's ``Exams``."""
+    data: dict[str, object] = {
+        "Id": exam_id // 10,
+        "ExamId": exam_id,
+        "Course": f"{subject[:2].lower()} {subject[:2].lower()}05",
+        "CourseId": exam_id // 10 + 1000,
+        "CourseTitle": subject,
+        "Teachers": [TEACHER],
+        "Date": finnish_day(days_from_now),
+        "Info": info,
+    }
+    if grade is not None:
+        data["Grade"] = grade
+        data["ExamSeen"] = iso_day(-1)
+    return data
+
+
+def make_overview(
+    exams: list[dict[str, object]] | None = None,
+    homework: list[tuple[int, int, str]] | None = None,
+) -> Overview:
+    """An overview with ``exams`` and ``homework`` given as (row, days_from_now, text)."""
+    if exams is None:
+        exams = [
+            overview_exam(501, -10, "Matematik", grade="9"),
+            overview_exam(502, 3, "Svenska", info="Word classes"),
+            overview_exam(503, 8, "Engelska", info=None),
+        ]
+    if homework is None:
+        homework = [(2, -1, "Page 20"), (1, -6, "Page 12")]
+    return Overview.from_api(
+        {
+            "Exams": exams,
+            "Groups": [
+                {
+                    "Id": 50,
+                    "CourseId": 1050,
+                    "CourseName": "Matematik",
+                    "CourseCode": "ma05",
+                    "Caption": "ma ma05",
+                    "Teachers": [TEACHER],
+                    "Homework": [
+                        {"RowNumber": row, "Date": iso_day(days), "Homework": text}
+                        for row, days, text in homework
+                    ],
+                    "Diary": [],
+                    "Exams": [],
+                }
+            ],
+        }
+    )
+
+
 def _messages(**kwargs: object) -> list[Message]:
     return [
         make_message(2, "Recent message", days_ago=1),
@@ -218,6 +293,7 @@ def build_client(students: list[Role]) -> MagicMock:
         side_effect=lambda user_id=None: make_bulletins(10, 9)
     )
     client.get_bulletin = AsyncMock(side_effect=_get_bulletin)
+    client.get_overview = AsyncMock(side_effect=lambda user_id=None: make_overview())
     return client
 
 

@@ -15,7 +15,7 @@ from homeassistant.helpers.event import (
     async_track_time_change,
 )
 from homeassistant.util import dt as dt_util
-from wilhelmina import Lesson, WeekSchedule
+from wilhelmina import Exam, Homework, Lesson, WeekSchedule
 
 from .const import (
     ATTR_CONTENT,
@@ -24,24 +24,40 @@ from .const import (
     ATTR_SENDER,
     ATTR_SUBJECT,
     ATTR_TIMESTAMP,
+    MAX_GRADE_LENGTH,
+    MAX_LIST_TEXT_LENGTH,
+    MAX_LISTED_EXAMS,
+    MAX_STATE_LENGTH,
+    RECENT_GRADES,
+    RECENT_HOMEWORK,
+    RECENT_MARKS,
+    RECENT_MESSAGES,
     SENSOR_ATTENDANCE_COUNT,
     SENSOR_LAST_UPDATE,
     SENSOR_LATEST_ATTENDANCE_MARK,
     SENSOR_LATEST_BULLETIN,
+    SENSOR_LATEST_EXAM_GRADE,
+    SENSOR_LATEST_HOMEWORK,
     SENSOR_LATEST_MESSAGE,
     SENSOR_LESSONS_THIS_WEEK,
     SENSOR_LESSONS_TODAY,
     SENSOR_LESSONS_TOMORROW,
+    SENSOR_NEXT_EXAM,
     SENSOR_NEXT_LESSON,
     SENSOR_UNREAD_BULLETIN_COUNT,
     SENSOR_UNREAD_COUNT,
+    SENSOR_UPCOMING_EXAMS,
 )
 from .coordinator import (
     StudentData,
     WilmaConfigEntry,
     WilmaCoordinator,
+    exam_attributes,
+    exam_grade,
+    homework_attributes,
     lesson_attributes,
     mark_attributes,
+    truncate,
     week_start,
 )
 from .entity import WilmaAccountEntity, WilmaStudentEntity
@@ -87,6 +103,16 @@ async def async_setup_entry(
                 ),
                 WilmaLessonsThisWeekSensor(
                     coordinator, entry, student, SENSOR_LESSONS_THIS_WEEK
+                ),
+                WilmaNextExamSensor(coordinator, entry, student, SENSOR_NEXT_EXAM),
+                WilmaUpcomingExamsSensor(
+                    coordinator, entry, student, SENSOR_UPCOMING_EXAMS
+                ),
+                WilmaLatestExamGradeSensor(
+                    coordinator, entry, student, SENSOR_LATEST_EXAM_GRADE
+                ),
+                WilmaLatestHomeworkSensor(
+                    coordinator, entry, student, SENSOR_LATEST_HOMEWORK
                 ),
             ]
         )
@@ -151,6 +177,16 @@ class WilmaLatestMessageSensor(WilmaStudentSensor):
         if message.get("content_html"):
             attrs[ATTR_CONTENT] = message["content_html"]
             attrs[ATTR_CONTENT_MARKDOWN] = message.get("content_markdown")
+        attrs["recent_messages"] = [
+            {
+                "id": recent.get("id"),
+                "subject": recent.get("subject"),
+                "sender": recent.get("sender"),
+                "timestamp": recent.get("timestamp"),
+                "unread": bool(recent.get("unread")),
+            }
+            for recent in student.messages[:RECENT_MESSAGES]
+        ]
         return attrs
 
 
@@ -196,8 +232,42 @@ class WilmaAttendanceCountSensor(WilmaStudentSensor):
     def _attributes(self, student: StudentData) -> dict[str, Any] | None:
         if not student.attendance:
             return None
-        by_code: Counter[str] = Counter(m.type.code for m in student.attendance.marks)
-        return {"by_type": _counts_by_type(student), "by_code": dict(by_code)}
+        marks = student.attendance.marks
+        by_code: Counter[str] = Counter(m.type.code for m in marks)
+        by_type_id: Counter[int] = Counter(m.type.id for m in marks)
+        mark_types = {mark_type.id: mark_type for mark_type in student.attendance.types}
+        for mark in marks:
+            mark_types.setdefault(mark.type.id, mark.type)
+        types = [
+            {
+                "type_id": type_id,
+                "code": mark_types[type_id].code,
+                "description": mark_types[type_id].description,
+                "color": mark_types[type_id].color,
+                "count": count,
+            }
+            for type_id, count in by_type_id.most_common()
+        ]
+        newest = sorted(marks, key=lambda m: (m.date, m.hour or 0), reverse=True)
+        recent_marks = [
+            {
+                "date": mark.date.isoformat(),
+                "hour": mark.hour,
+                "code": mark.type.code,
+                "description": mark.type.description,
+                "color": mark.type.color,
+                "course": mark.course,
+                "comment": truncate(mark.comment, MAX_LIST_TEXT_LENGTH),
+                "teacher": mark.teacher,
+            }
+            for mark in newest[:RECENT_MARKS]
+        ]
+        return {
+            "by_type": _counts_by_type(student),
+            "by_code": dict(by_code),
+            "types": types,
+            "recent_marks": recent_marks,
+        }
 
 
 def _counts_by_type(student: StudentData) -> dict[str, int]:
@@ -231,7 +301,7 @@ class WilmaLatestBulletinSensor(WilmaStudentSensor):
                 "content_html",
                 "content_markdown",
             )
-        }
+        } | {"recent_bulletins": student.recent_bulletins}
 
 
 class WilmaNewBulletinCountSensor(WilmaStudentSensor):
@@ -392,3 +462,117 @@ class WilmaLessonsThisWeekSensor(WilmaScheduleSensor):
             "week_end": week.week_end.isoformat(),
             **self._summary(week.lessons),
         }
+
+
+class WilmaNextExamSensor(WilmaScheduleSensor):
+    """The next exam (today or later), with its subject as state."""
+
+    _attr_icon = "mdi:file-document-edit"
+
+    def _next(self, student: StudentData) -> Exam | None:
+        upcoming = student.upcoming_exams(self._today())
+        return upcoming[0] if upcoming else None
+
+    def _value(self, student: StudentData) -> str | None:
+        exam = self._next(student)
+        return truncate(exam.subject or exam.course, MAX_STATE_LENGTH) if exam else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        exam = self._next(student)
+        if not exam:
+            return None
+        attrs = exam_attributes(exam)
+        attrs["days_until"] = (exam.date - self._today()).days
+        return attrs
+
+
+class WilmaUpcomingExamsSensor(WilmaScheduleSensor):
+    """Number of upcoming exams, with the exams as attributes."""
+
+    _attr_icon = "mdi:calendar-alert"
+    _attr_native_unit_of_measurement = "exams"
+
+    def _value(self, student: StudentData) -> int | None:
+        upcoming = student.upcoming_exams(self._today())
+        return len(upcoming) if upcoming is not None else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        upcoming = student.upcoming_exams(self._today())
+        if upcoming is None:
+            return None
+        return {"exams": [_exam_summary(exam) for exam in upcoming[:MAX_LISTED_EXAMS]]}
+
+
+def _exam_summary(exam: Exam) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "date": exam.date.isoformat(),
+        "subject": exam.subject or exam.course,
+        "course": exam.course,
+        "name": exam.name or None,
+        "info": truncate(exam.info, MAX_LIST_TEXT_LENGTH),
+        "teachers": exam.teacher_names,
+    }
+    if grade := exam_grade(exam):
+        summary["grade"] = truncate(grade, MAX_GRADE_LENGTH)
+    return summary
+
+
+class WilmaLatestExamGradeSensor(WilmaStudentSensor):
+    """The grade of the most recent graded exam."""
+
+    _attr_icon = "mdi:school-outline"
+
+    def _latest(self, student: StudentData) -> Exam | None:
+        graded = student.graded_exams()
+        return graded[0] if graded else None
+
+    def _value(self, student: StudentData) -> str | None:
+        exam = self._latest(student)
+        return truncate(exam_grade(exam), MAX_STATE_LENGTH) if exam else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        graded = student.graded_exams()
+        if graded is None:
+            return None
+        attrs: dict[str, Any] = {}
+        if graded:
+            attrs.update(exam_attributes(graded[0]))
+            attrs["seen"] = graded[0].seen.isoformat() if graded[0].seen else None
+        attrs["graded_exams"] = [
+            {
+                "date": exam.date.isoformat(),
+                "subject": exam.subject or exam.course,
+                "course": exam.course,
+                "grade": truncate(exam.grade, MAX_GRADE_LENGTH),
+                "verbal_grade": truncate(exam.verbal_grade, MAX_LIST_TEXT_LENGTH),
+            }
+            for exam in graded[:RECENT_GRADES]
+        ]
+        return attrs
+
+
+class WilmaLatestHomeworkSensor(WilmaStudentSensor):
+    """The newest homework entered in any course's lesson diary."""
+
+    _attr_icon = "mdi:book-open-variant"
+
+    def _latest(self, student: StudentData) -> Homework | None:
+        homework = student.homework
+        return homework[0] if homework else None
+
+    def _value(self, student: StudentData) -> str | None:
+        homework = self._latest(student)
+        return truncate(homework.text, MAX_STATE_LENGTH) if homework else None
+
+    def _attributes(self, student: StudentData) -> dict[str, Any] | None:
+        homework = student.homework
+        if homework is None:
+            return None
+        attrs: dict[str, Any] = {}
+        if homework:
+            attrs.update(homework_attributes(homework[0]))
+        attrs["recent_homework"] = [
+            homework_attributes(entry, MAX_LIST_TEXT_LENGTH)
+            for entry in homework[:RECENT_HOMEWORK]
+        ]
+        return attrs

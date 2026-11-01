@@ -1,16 +1,22 @@
 # Wilma for Home Assistant
 
 A Home Assistant integration for the Wilma school platform, providing access to your messages,
-attendance marks and schedule.
+attendance marks, bulletins, schedule, exams and homework.
 
 ## Features
 
 - Read-only; polls Wilma every 30 minutes (configurable)
 - Multiple students: a device per child on the account
 - Events for new messages, attendance marks (absences, positive feedback, missing homework,
-  behaviour notes, ...) and bulletins
+  behaviour notes, ...), bulletins, exams, exam grades and homework
 - Schedule calendar, next lesson and today's, tomorrow's and this week's lessons
+- Exam calendar, next exam, upcoming exams and latest exam grade
+- Latest homework from the lesson diary
 - Sensors for messages, unread count, attendance marks, bulletins and recent activity
+- Dashboard cards (schedule, next lesson, activity, attendance marks, exams), registered
+  automatically
+- A ready-made dashboard with a tab per student and an overview: just
+  `strategy: {type: custom:wilma}`, or copy `dashboards/wilma.yaml`
 - English, Finnish and Swedish
 
 ## Usage

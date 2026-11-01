@@ -9,12 +9,14 @@ from homeassistant.helpers import entity_registry as er
 from .const import LEGACY_STUDENT_ENTITY_KEYS
 from .coordinator import StudentData, WilmaConfigEntry, WilmaCoordinator
 from .entity import student_key
+from .frontend import async_setup_frontend
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WilmaConfigEntry) -> bool:
     """Set up Wilma from a config entry."""
+    async_setup_frontend(hass)
     coordinator = WilmaCoordinator(hass, entry)
     try:
         await coordinator.async_config_entry_first_refresh()

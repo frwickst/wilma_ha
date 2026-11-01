@@ -234,7 +234,9 @@ async def test_stored_messages_are_capped(
     assert len(mock_client.fetch_content.await_args.args[0]) == 10
 
 
-@pytest.mark.parametrize("method", ["get_attendance", "get_bulletins", "get_schedule"])
+@pytest.mark.parametrize(
+    "method", ["get_attendance", "get_bulletins", "get_schedule", "get_overview"]
+)
 async def test_partial_failures_keep_other_data(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -253,6 +255,7 @@ async def test_partial_failures_keep_other_data(
     assert student.messages
     assert student.attendance == first.students[USER_ID].attendance
     assert student.schedule == first.students[USER_ID].schedule
+    assert student.overview == first.students[USER_ID].overview
     assert coordinator.partial_errors
     assert "Anna Student" in coordinator.partial_errors[0]
 
@@ -273,7 +276,13 @@ async def test_two_students(
 
     assert list(data.students) == ["!12345", "!67890"]
     assert data.students["!67890"].first_name == "Bo"
-    for method in ("get_messages", "get_attendance", "get_schedule", "get_bulletins"):
+    for method in (
+        "get_messages",
+        "get_attendance",
+        "get_schedule",
+        "get_bulletins",
+        "get_overview",
+    ):
         user_ids = {
             call.kwargs["user_id"]
             for call in getattr(mock_two_student_client, method).await_args_list

@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Wilma",
-        "description": "Set up Wilma to follow messages, lesson marks, bulletins and the schedule of every student on the account.",
+        "description": "Set up Wilma to follow messages, lesson marks, bulletins, exams, homework and the schedule of every student on the account.",
         "data": {
           "server_url": "Wilma server URL (e.g. https://turku.inschool.fi)",
           "username": "Username",
@@ -67,6 +67,18 @@
       "lessons_this_week": {
         "name": "Lessons this week"
       },
+      "next_exam": {
+        "name": "Next exam"
+      },
+      "upcoming_exams": {
+        "name": "Upcoming exams"
+      },
+      "latest_exam_grade": {
+        "name": "Latest exam grade"
+      },
+      "latest_homework": {
+        "name": "Latest homework"
+      },
       "last_update": {
         "name": "Last update"
       }
@@ -88,6 +100,9 @@
     "calendar": {
       "schedule": {
         "name": "Schedule"
+      },
+      "exams": {
+        "name": "Exams"
       }
     }
   }

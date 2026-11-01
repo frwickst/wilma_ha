@@ -21,8 +21,11 @@ from wilhelmina import (
     AuthenticationError,
     Bulletin,
     BulletinSection,
+    Exam,
+    Homework,
     Lesson,
     Message,
+    Overview,
     Role,
     WeekSchedule,
     WilmaClient,
@@ -42,13 +45,21 @@ from .const import (
     DOMAIN,
     EVENT_NEW_ATTENDANCE_MARK,
     EVENT_NEW_BULLETIN,
+    EVENT_NEW_EXAM,
+    EVENT_NEW_EXAM_GRADE,
+    EVENT_NEW_HOMEWORK,
     EVENT_NEW_MESSAGE,
     INITIAL_MESSAGE_LOOKBACK,
     MAX_BULLETIN_FETCHES_PER_UPDATE,
     MAX_CACHED_BULLETINS,
     MAX_CACHED_WEEKS,
     MAX_CONTENT_FETCHES_PER_UPDATE,
+    MAX_GRADE_LENGTH,
+    MAX_SEEN_EXAM_IDS,
     MAX_STORED_MESSAGES,
+    MAX_TEXT_LENGTH,
+    RECENT_BULLETINS,
+    SEEN_HOMEWORK_RETENTION,
     SEEN_MARK_RETENTION,
     STORAGE_KEY,
     STORAGE_VERSION,
@@ -85,6 +96,45 @@ def mark_attributes(mark: AttendanceMark) -> dict[str, Any]:
     }
 
 
+def truncate(text: str | None, length: int) -> str | None:
+    """``text`` cut to at most ``length`` characters, marked with an ellipsis when cut."""
+    if text is None or len(text) <= length:
+        return text
+    return text[: length - 1].rstrip() + "…"
+
+
+def exam_grade(exam: Exam) -> str | None:
+    """The exam's grade, or else its verbal assessment."""
+    return exam.grade or exam.verbal_grade
+
+
+def exam_attributes(exam: Exam, text_length: int = MAX_TEXT_LENGTH) -> dict[str, Any]:
+    """Flat, JSON-serialisable description of an exam."""
+    return {
+        "id": exam.id,
+        "date": exam.date.isoformat(),
+        "subject": exam.subject,
+        "course": exam.course,
+        "name": exam.name or None,
+        "info": truncate(exam.info, text_length),
+        "teachers": exam.teacher_names,
+        "grade": truncate(exam.grade, MAX_GRADE_LENGTH),
+        "verbal_grade": truncate(exam.verbal_grade, text_length),
+    }
+
+
+def homework_attributes(
+    homework: Homework, text_length: int = MAX_TEXT_LENGTH
+) -> dict[str, Any]:
+    """Flat, JSON-serialisable description of a homework entry."""
+    return {
+        "date": homework.date.isoformat(),
+        "subject": homework.subject,
+        "course": homework.course,
+        "text": truncate(homework.text, text_length),
+    }
+
+
 def lesson_attributes(lesson: Lesson, tz: ZoneInfo) -> dict[str, Any]:
     """Flat, JSON-serialisable description of a lesson."""
     return {
@@ -114,6 +164,10 @@ class StudentData:
     """Bulletins that appeared within the recent threshold."""
     latest_new_mark_seen: datetime | None = None
     """When the most recent previously unseen attendance mark was detected."""
+    recent_bulletins: list[dict[str, Any]] = field(default_factory=list)
+    """The newest current bulletins, without content."""
+    overview: Overview | None = None
+    """Current courses with their exams and homework."""
 
     @property
     def first_name(self) -> str:
@@ -129,6 +183,24 @@ class StudentData:
     def latest_attendance_mark(self) -> AttendanceMark | None:
         """The attendance mark on the latest date and hour."""
         return self.attendance.latest if self.attendance else None
+
+    @property
+    def exams(self) -> list[Exam] | None:
+        """All exams of the current courses, oldest first; None if not fetched."""
+        return self.overview.exams if self.overview else None
+
+    def upcoming_exams(self, today: date) -> list[Exam] | None:
+        """Exams on or after ``today``, soonest first; None if not fetched."""
+        return self.overview.upcoming_exams(today) if self.overview else None
+
+    def graded_exams(self) -> list[Exam] | None:
+        """Graded exams, newest first; None if not fetched."""
+        return self.overview.graded_exams() if self.overview else None
+
+    @property
+    def homework(self) -> list[Homework] | None:
+        """Homework of the current courses, newest first; None if not fetched."""
+        return self.overview.homework if self.overview else None
 
     def lessons_on(self, day: date) -> list[Lesson] | None:
         """Lessons on ``day``, or None if that week has not been fetched."""
@@ -199,6 +271,10 @@ class _StudentState:
     seen_message_ids: set[int] | None = None
     seen_mark_keys: set[str] | None = None
     seen_bulletin_ids: set[int] | None = None
+    seen_exam_ids: set[int] | None = None
+    seen_homework_keys: set[str] | None = None
+    # Last known grade of each seen exam (None while ungraded)
+    exam_grades: dict[int, str | None] = field(default_factory=dict)
     # When previously unseen marks and bulletins were detected
     mark_first_seen: dict[str, datetime] = field(default_factory=dict)
     bulletin_first_seen: dict[int, datetime] = field(default_factory=dict)
@@ -208,6 +284,8 @@ class _StudentState:
     attendance: AttendanceReport | None = None
     schedule: dict[date, WeekSchedule] = field(default_factory=dict)
     latest_bulletin_id: int | None = None
+    recent_bulletins: list[dict[str, Any]] = field(default_factory=list)
+    overview: Overview | None = None
     week_cache: dict[date, tuple[WeekSchedule, datetime]] = field(default_factory=dict)
 
     @classmethod
@@ -219,6 +297,12 @@ class _StudentState:
             state.seen_mark_keys = set(data["seen_attendance_keys"])
         if data.get("seen_bulletin_ids") is not None:
             state.seen_bulletin_ids = set(data["seen_bulletin_ids"])
+        if data.get("seen_exam_ids") is not None:
+            state.seen_exam_ids = set(data["seen_exam_ids"])
+        if data.get("seen_homework_keys") is not None:
+            state.seen_homework_keys = set(data["seen_homework_keys"])
+        for key, value in (data.get("exam_grades") or {}).items():
+            state.exam_grades[int(key)] = value if isinstance(value, str) else None
         for key, value in (data.get("mark_first_seen") or {}).items():
             if (seen := _parse_time(value)) is not None:
                 state.mark_first_seen[key] = seen
@@ -240,6 +324,7 @@ class _StudentState:
                 str(k): v.isoformat() for k, v in self.bulletin_first_seen.items()
             },
             "bulletin_cache": {str(k): v for k, v in self.bulletin_cache.items()},
+            "exam_grades": {str(k): v for k, v in self.exam_grades.items()},
         }
         if self.seen_message_ids is not None:
             data["seen_message_ids"] = sorted(self.seen_message_ids)
@@ -247,6 +332,10 @@ class _StudentState:
             data["seen_attendance_keys"] = sorted(self.seen_mark_keys)
         if self.seen_bulletin_ids is not None:
             data["seen_bulletin_ids"] = sorted(self.seen_bulletin_ids)
+        if self.seen_exam_ids is not None:
+            data["seen_exam_ids"] = sorted(self.seen_exam_ids)
+        if self.seen_homework_keys is not None:
+            data["seen_homework_keys"] = sorted(self.seen_homework_keys)
         return data
 
 
@@ -325,6 +414,7 @@ class WilmaCoordinator(DataUpdateCoordinator[WilmaData]):
                     await self._update_attendance(client, student, state)
                     await self._update_schedule(client, student, state)
                     await self._update_bulletins(client, student, state)
+                    await self._update_overview(client, student, state)
         except AuthenticationError as err:
             await self.async_close_client()
             raise UpdateFailed(f"Authentication failed: {err}") from err
@@ -408,6 +498,8 @@ class WilmaCoordinator(DataUpdateCoordinator[WilmaData]):
             latest_bulletin=latest_bulletin,
             new_bulletin_count=new_bulletins,
             latest_new_mark_seen=max(state.mark_first_seen.values(), default=None),
+            recent_bulletins=list(state.recent_bulletins),
+            overview=state.overview,
         )
 
     def _event_base(self, student: Role) -> dict[str, Any]:
@@ -447,6 +539,11 @@ class WilmaCoordinator(DataUpdateCoordinator[WilmaData]):
 
         new_messages = [_message_to_dict(message, student) for message in unseen]
         state.messages = _merge_messages(new_messages, state.messages)
+        # Stored messages follow Wilma's current read status
+        listed_unread = {message.id: message.unread for message in listed}
+        for stored in state.messages:
+            if stored["id"] in listed_unread:
+                stored["unread"] = listed_unread[stored["id"]]
 
         if listed:
             state.seen_message_ids = {message.id for message in listed}
@@ -585,10 +682,96 @@ class WilmaCoordinator(DataUpdateCoordinator[WilmaData]):
             if key in state.seen_bulletin_ids
         }
         state.latest_bulletin_id = latest.id if latest else None
+        state.recent_bulletins = [
+            self._bulletin_summary(student, state, bulletin)
+            for bulletin in current[:RECENT_BULLETINS]
+        ]
         keep = {state.latest_bulletin_id} | set(state.bulletin_first_seen)
         for key in sorted(state.bulletin_cache, reverse=True):
             if key not in keep and len(state.bulletin_cache) > MAX_CACHED_BULLETINS:
                 del state.bulletin_cache[key]
+
+    def _bulletin_summary(
+        self, student: Role, state: _StudentState, bulletin: Bulletin
+    ) -> dict[str, Any]:
+        cached = state.bulletin_cache.get(bulletin.id) or {}
+        return {
+            "id": bulletin.id,
+            "title": cached.get("title") or bulletin.title,
+            "date": bulletin.date.isoformat() if bulletin.date else cached.get("date"),
+            "author": cached.get("author") or bulletin.author,
+            "url": f"{self.server_url}/{student.user_id}/news/{bulletin.id}",
+        }
+
+    async def _update_overview(
+        self, client: WilmaClient, student: Role, state: _StudentState
+    ) -> None:
+        try:
+            overview = await client.get_overview(user_id=student.user_id)
+        except AuthenticationError:
+            raise
+        except WilmaError as err:
+            self._partial_failure("exams and homework", student, err)
+            return
+
+        self._detect_new_exams(student, state, overview.exams)
+        self._detect_new_homework(student, state, overview.homework)
+        state.overview = overview
+
+    def _detect_new_exams(
+        self, student: Role, state: _StudentState, exams: list[Exam]
+    ) -> None:
+        first_run = state.seen_exam_ids is None
+        seen = state.seen_exam_ids or set()
+        for exam in exams:
+            grade = exam_grade(exam)
+            if not first_run:
+                if exam.id not in seen:
+                    self.hass.bus.async_fire(
+                        EVENT_NEW_EXAM,
+                        {**self._event_base(student), **exam_attributes(exam)},
+                    )
+                if grade is not None and state.exam_grades.get(exam.id) != grade:
+                    self.hass.bus.async_fire(
+                        EVENT_NEW_EXAM_GRADE,
+                        {
+                            **self._event_base(student),
+                            **exam_attributes(exam),
+                            "previous_grade": state.exam_grades.get(exam.id),
+                        },
+                    )
+            state.exam_grades[exam.id] = grade
+
+        ids = sorted(seen | {exam.id for exam in exams}, reverse=True)
+        state.seen_exam_ids = set(ids[:MAX_SEEN_EXAM_IDS])
+        state.exam_grades = {
+            key: grade
+            for key, grade in state.exam_grades.items()
+            if key in state.seen_exam_ids
+        }
+
+    def _detect_new_homework(
+        self, student: Role, state: _StudentState, homework: list[Homework]
+    ) -> None:
+        keys = {entry.key for entry in homework}
+        if state.seen_homework_keys is None:
+            state.seen_homework_keys = keys
+            return
+        new = [entry for entry in homework if entry.key not in state.seen_homework_keys]
+        for entry in reversed(new):
+            self.hass.bus.async_fire(
+                EVENT_NEW_HOMEWORK,
+                {
+                    **self._event_base(student),
+                    "key": entry.key,
+                    **homework_attributes(entry),
+                },
+            )
+        # Keys end with the homework's date
+        cutoff = (dt_util.now().date() - SEEN_HOMEWORK_RETENTION).isoformat()
+        state.seen_homework_keys = {
+            key for key in state.seen_homework_keys | keys if key[-10:] >= cutoff
+        }
 
     def _bulletin_dict(self, student: Role, bulletin: Bulletin) -> dict[str, Any]:
         return {

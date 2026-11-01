@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Anslut till Wilma",
-        "description": "Följ meddelanden, lektionsanteckningar, anslag och schema för alla elever på kontot.",
+        "description": "Följ meddelanden, lektionsanteckningar, anslag, prov, läxor och schema för alla elever på kontot.",
         "data": {
           "server_url": "Wilmas adress (t.ex. https://turku.inschool.fi)",
           "username": "Användarnamn",
@@ -67,6 +67,18 @@
       "lessons_this_week": {
         "name": "Lektioner denna vecka"
       },
+      "next_exam": {
+        "name": "Nästa prov"
+      },
+      "upcoming_exams": {
+        "name": "Kommande prov"
+      },
+      "latest_exam_grade": {
+        "name": "Senaste provvitsord"
+      },
+      "latest_homework": {
+        "name": "Senaste läxa"
+      },
       "last_update": {
         "name": "Senaste uppdatering"
       }
@@ -88,6 +100,9 @@
     "calendar": {
       "schedule": {
         "name": "Schema"
+      },
+      "exams": {
+        "name": "Prov"
       }
     }
   }

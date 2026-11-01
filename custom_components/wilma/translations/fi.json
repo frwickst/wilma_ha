@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Yhdistä Wilmaan",
-        "description": "Seuraa tilin kaikkien oppilaiden viestejä, tuntimerkintöjä, tiedotteita ja lukujärjestystä.",
+        "description": "Seuraa tilin kaikkien oppilaiden viestejä, tuntimerkintöjä, tiedotteita, kokeita, kotitehtäviä ja lukujärjestystä.",
         "data": {
           "server_url": "Wilman osoite (esim. https://turku.inschool.fi)",
           "username": "Käyttäjätunnus",
@@ -67,6 +67,18 @@
       "lessons_this_week": {
         "name": "Tunnit tällä viikolla"
       },
+      "next_exam": {
+        "name": "Seuraava koe"
+      },
+      "upcoming_exams": {
+        "name": "Tulevat kokeet"
+      },
+      "latest_exam_grade": {
+        "name": "Viimeisin koearvosana"
+      },
+      "latest_homework": {
+        "name": "Viimeisin kotitehtävä"
+      },
       "last_update": {
         "name": "Viimeisin päivitys"
       }
@@ -88,6 +100,9 @@
     "calendar": {
       "schedule": {
         "name": "Lukujärjestys"
+      },
+      "exams": {
+        "name": "Kokeet"
       }
     }
   }
