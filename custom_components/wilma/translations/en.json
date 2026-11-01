@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Wilma",
-        "description": "Set up Wilma integration to access your messages.",
+        "description": "Set up Wilma integration to access your messages, lesson marks and schedule.",
         "data": {
           "server_url": "Wilma Server URL (e.g. https://turku.inschool.fi)",
           "username": "Username",
@@ -23,10 +23,27 @@
   "entity": {
     "sensor": {
       "latest_message": {
-        "name": "Latest Message"
+        "name": "Latest message"
+      },
+      "latest_attendance_mark": {
+        "name": "Latest attendance mark"
       },
       "last_update": {
-        "name": "Last Update"
+        "name": "Last update"
+      },
+      "lessons_today": {
+        "name": "Lessons today"
+      },
+      "lessons_tomorrow": {
+        "name": "Lessons tomorrow"
+      },
+      "lessons_this_week": {
+        "name": "Lessons this week"
+      }
+    },
+    "calendar": {
+      "schedule": {
+        "name": "Schedule"
       }
     }
   }

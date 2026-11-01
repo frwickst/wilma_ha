@@ -1,13 +1,18 @@
 # Wilma for Home Assistant
 
-A Home Assistant integration for the Wilma school platform, providing access to your messages.
+A Home Assistant integration for the Wilma school platform, providing access to your messages,
+attendance marks and schedule.
 
 ## Features
 
-- Polls Wilma for new messages every 15 minutes
+- Polls Wilma every 30 minutes (read-only)
+- Fires `wilma_new_message` and `wilma_new_attendance_mark` events for new messages and new
+  attendance marks (absences, positive feedback, missing homework, behaviour notes, ...)
+- A schedule calendar with the student's lessons
 - Provides sensors for:
   - Latest message
-  - Latest unread message
+  - Latest attendance mark
+  - Lessons today, tomorrow and this week
   - Last update time
 - Stores message content for access by automations
 - Perfect for creating AI-powered notification workflows
@@ -25,14 +30,14 @@ After installation, add the integration through the Home Assistant UI:
 automation:
   - alias: "Summarize new Wilma message"
     trigger:
-      platform: state
-      entity_id: sensor.latest_message
+      - platform: event
+        event_type: wilma_new_message
     action:
       - service: conversation.process
         data:
           agent_id: homeassistant
           text: >
-            Summarize this message concisely: {{ state_attr('sensor.latest_message', 'content_markdown') }}
+            Summarize this message concisely: {{ trigger.event.data.content_markdown }}
       - service: notify.mobile_app
         data:
           title: "Wilma Message Summary"
